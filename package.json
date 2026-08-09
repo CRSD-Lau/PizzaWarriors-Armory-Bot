@@ -1,0 +1,36 @@
+{
+  "name": "pizzawarriors-armory-bot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lean Discord armory and GearScore lookup bot for PizzaWarriors.",
+  "author": "Neil Mitchell",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CRSD-Lau/PizzaWarriors-Armory-Bot.git"
+  },
+  "homepage": "https://github.com/CRSD-Lau/PizzaWarriors-Armory-Bot#readme",
+  "bugs": {
+    "url": "https://github.com/CRSD-Lau/PizzaWarriors-Armory-Bot/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx tests/gearscore.test.ts && tsx tests/upgrade.test.ts && tsx tests/ready.test.ts && tsx tests/guild.test.ts"
+  },
+  "dependencies": {
+    "discord.js": "^14.24.2",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.56.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
+  }
+}

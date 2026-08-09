@@ -1,0 +1,42 @@
+name: Bug report
+description: Report a reproducible problem with a bot command or deployment.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not include Discord tokens, cookies, `.env` contents, or private server data.
+  - type: dropdown
+    id: command
+    attributes:
+      label: Affected area
+      options:
+        - /armory
+        - /ready
+        - /raider
+        - /roster
+        - /upgrade
+        - Deployment or recovery
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include sanitized logs and exact reproduction steps.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: v1.0.0
+    validations:
+      required: true
