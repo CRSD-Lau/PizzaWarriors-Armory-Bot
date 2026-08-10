@@ -17,7 +17,7 @@ import { WarmaneArmory } from "./armory.js";
 import { ArmoryCardRenderer } from "./card.js";
 import { config } from "./config.js";
 import { calculateGearScore } from "./gearscore.js";
-import { findUpgradeProfile, upgradeSpecNames } from "./upgrade.js";
+import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
 import { buildReadyReport, RaiderLinks } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 
@@ -33,7 +33,7 @@ const command = new SlashCommandBuilder()
 
 const upgradeCommand = new SlashCommandBuilder()
   .setName("upgrade")
-  .setDescription("Preview the research profile for a Warmane character")
+  .setDescription("Show a PizzaWarriors sheet-based upgrade path for a Warmane character")
   .addStringOption((option) => option.setName("name").setDescription("Character name").setRequired(true).setMaxLength(12))
   .addStringOption((option) => option.setName("spec").setDescription("Specialization to evaluate").setRequired(true).setAutocomplete(true))
   .addStringOption((option) => option.setName("realm").setDescription("Warmane realm").addChoices(
@@ -177,7 +177,7 @@ client.on("interactionCreate", async (interaction) => {
     }
     const event = interaction.options.getString("event", true);
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
-    await interaction.reply({ content: "Building upgrade card…", flags: MessageFlags.SuppressNotifications });
+    await interaction.reply({ content: "Building raid-readiness card…", flags: MessageFlags.SuppressNotifications });
     try {
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
       if (!report.signups.length) {
@@ -197,7 +197,7 @@ client.on("interactionCreate", async (interaction) => {
   if (interaction.commandName === "roster") {
     const guildName = interaction.options.getString("guild")?.trim() || "Pizza Warriors";
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
-    await interaction.reply({ content: "Building raid-readiness card…", flags: MessageFlags.SuppressNotifications });
+    await interaction.reply({ content: "Loading guild roster…", flags: MessageFlags.SuppressNotifications });
     try {
       const roster = await getGuildRoster(guildName, realm);
       await interaction.editReply(await rosterMessage(roster, 0));
@@ -211,22 +211,22 @@ client.on("interactionCreate", async (interaction) => {
     const name = interaction.options.getString("name", true).trim();
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
     const specName = interaction.options.getString("spec", true);
-    await interaction.reply({ content: "Loading guild roster…", flags: MessageFlags.SuppressNotifications });
+    await interaction.reply({ content: "Building upgrade card…", flags: MessageFlags.SuppressNotifications });
     try {
       const character = await armory.getCharacter(name, realm);
       if (!character.className) {
         await interaction.editReply("I found the character, but Warmane did not expose a usable class for this profile.");
         return;
       }
-      const profile = findUpgradeProfile(character.className, specName);
+      const profile = await getSheetUpgradeProfile(character.className, specName);
       if (!profile) {
-        await interaction.editReply(`I found a **${character.className}**, but PizzaWarriors does not have a **${specName}** research profile for that class yet.`);
+        await interaction.editReply(`I found a **${character.className}**, but the PizzaWarriors Best-in-Slot sheet does not have a **${specName}** column for that class.`);
         return;
       }
       const fileName = `${name.replace(/[^a-z0-9_-]/gi, "-").toLowerCase()}-upgrade-card.png`;
       const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder().setLabel("Open Armory").setStyle(ButtonStyle.Link).setURL(character.armoryUrl),
-        new ButtonBuilder().setLabel("Guide Source").setStyle(ButtonStyle.Link).setURL(profile.sources[0].url),
+        new ButtonBuilder().setLabel("Open Best-in-Slot Sheet").setStyle(ButtonStyle.Link).setURL(profile.sources[0].url),
       );
       const card = await cards.renderUpgrade({ name, realm, className: character.className, specName, profile, items: character.items, portrait: character.portrait });
       const embed = new EmbedBuilder().setColor(0xff8000).setImage(`attachment://${fileName}`);

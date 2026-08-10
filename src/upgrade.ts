@@ -13,7 +13,7 @@ export type UpgradeSource = {
   note: string;
 };
 
-export type UpgradeTarget = { id: number; slot: string; name: string; icon: string };
+export type UpgradeTarget = { id?: number; slot: string; name: string; icon: string; aliases?: string[] };
 
 /*
  * Provisional ICC/Ruby Sanctum end-game target matrices.  Each profile still

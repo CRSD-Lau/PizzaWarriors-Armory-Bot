@@ -28,7 +28,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Includes an **Open Armory** link and a resilient text-embed fallback.
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
-- Builds reviewed specialization upgrade cards with source links and owned-versus-target equipment.
+- Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
 - Runs without a database, web dashboard, message-content intent, or guild-roster sync.
 
 ## Commands
@@ -41,12 +41,14 @@ Look up a character with one slash command and receive a mobile-readable equipme
 /ready event:<Raid-Helper message link or event ID> realm:Lordaeron
 /raider link name:Lausudo realm:Lordaeron
 /roster guild:"Pizza Warriors" realm:Lordaeron
-/upgrade name:Lausudo realm:Lordaeron spec:"Warrior — Fury"
+/upgrade name:Lausudo realm:Lordaeron spec:Fury
 ```
 
 `/ready` reads the public Raid-Helper event endpoint and checks active signed attendees against Warmane. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Bench, late, tentative, and absent entries are excluded from the readiness total.
 
-`/roster` defaults to **Pizza Warriors** on the configured realm. Its Previous and Next controls show ten characters at a time, while **Open Guild Armory** returns to the underlying public roster. `/upgrade` compares the equipped character against a curated, source-linked specialization profile and clearly marks research-only profiles.
+`/roster` defaults to **Pizza Warriors** on the configured realm. Its Previous and Next controls show ten characters at a time, while **Open Guild Armory** returns to the underlying public roster.
+
+`/upgrade` loads its targets from the [PizzaWarriors Lordaeron Best-in-Slot List](https://docs.google.com/spreadsheets/d/1i5CFTZ8kIrISQzvNmJHx85smAYlkaCTO9q_UcsrcqqE/edit). The bot reads the selected class/spec column directly, caches it for five minutes, and links the exact class tab on every card. Update the sheet and the next fresh `/upgrade` request uses the new list—no code edit or bot restart is needed.
 
 Supported realms are **Lordaeron**, **Icecrown**, and **Blackrock**. The configured default is Lordaeron. Anyone who can use the slash command may look up a public character; guild membership is intentionally not required.
 
@@ -108,6 +110,8 @@ Warmane Armory ──► item metadata + equipped icons
 WotLK GearScoreLite scorer ──► PizzaWarriors card renderer ──► Discord attachment
 
 Raid-Helper event ID ──► public event signups ──► Warmane character links ──► raid-readiness card
+
+PizzaWarriors Best-in-Slot Sheet ──► selected class/spec column ──► upgrade-target card
 ```
 
 The bot uses the Warmane armory grid for the equipped position and icon, then enriches each item with type, level, and quality. The scoring rules are adapted from Pizza Logs' tested GearScoreLite implementation.
