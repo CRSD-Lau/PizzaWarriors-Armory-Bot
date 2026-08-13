@@ -1,5 +1,6 @@
-"use strict";
+import { createRequire } from "node:module";
 
+const require = createRequire(import.meta.url);
 const pm2 = require("C:/Users/neil_/AppData/Roaming/npm/node_modules/pm2");
 const appName = "pizza-warriors-armory";
 
@@ -25,6 +26,20 @@ pm2.connect((connectError) => {
     const bot = processes.find((process) => process.name === appName);
     if (bot?.pm2_env?.status === "online") {
       finish(0);
+      return;
+    }
+
+    // A saved process can already exist in PM2 but be stopped. `resurrect`
+    // intentionally leaves that state alone, so restart it explicitly.
+    if (bot) {
+      pm2.restart(appName, (restartError) => {
+        if (restartError) {
+          console.error(restartError.message);
+          finish(1);
+          return;
+        }
+        finish(0);
+      });
       return;
     }
 
