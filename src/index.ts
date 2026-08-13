@@ -20,6 +20,7 @@ import { calculateGearScore } from "./gearscore.js";
 import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
 import { buildReadyReport, RaiderLinks } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
+import { gearScoreTier } from "./score-tiers.js";
 
 const command = new SlashCommandBuilder()
   .setName("armory")
@@ -81,14 +82,6 @@ const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const lookupCooldowns = new Map<string, number>();
 const LOOKUP_COOLDOWN_MS = 10_000;
 const ROSTER_PAGE_SIZE = 10;
-
-function scoreBand(score: number): string {
-  if (score > 5000) return "Legendary";
-  if (score > 4000) return "Epic";
-  if (score > 3000) return "Superior";
-  if (score > 2000) return "Uncommon";
-  return "Common";
-}
 
 function rosterButtonId(page: number, realm: string, guildName: string): string {
   return `roster:${page}:${realm}:${encodeURIComponent(guildName)}`;
@@ -257,6 +250,7 @@ client.on("interactionCreate", async (interaction) => {
     const character = await armory.getCharacter(name, realm);
     const summary = calculateGearScore(character.items);
     if (!summary) throw new Error("Warmane returned equipment, but sufficient item data was unavailable to calculate GearScore.");
+    const tier = gearScoreTier(summary.score);
     const fileStem = name.replace(/[^a-z0-9_-]/gi, "-").toLowerCase();
     const cardName = `${fileStem}-armory-card.png`;
     const buttons = new ActionRowBuilder<ButtonBuilder>().addComponents(
@@ -264,7 +258,7 @@ client.on("interactionCreate", async (interaction) => {
     );
     try {
       const card = await cards.render({ name, realm, items: character.items, summary, portrait: character.portrait });
-      const embed = new EmbedBuilder().setColor(0xff8000).setImage(`attachment://${cardName}`);
+      const embed = new EmbedBuilder().setColor(tier.color).setImage(`attachment://${cardName}`);
       await interaction.editReply({ embeds: [embed], components: [buttons], files: [new AttachmentBuilder(card, { name: cardName })] });
     } catch (cardError) {
       // The raw armory data remains useful if a browser/image host is temporarily unavailable.
@@ -274,12 +268,12 @@ client.on("interactionCreate", async (interaction) => {
         return `**${item.slot}** · ${item.name} — iLvl ${item.itemLevel}${itemScore ? ` · ${itemScore} GS` : ""}`;
       }).reduce<string[]>((lines, line) => lines.join("\n").length + line.length <= 3_850 ? [...lines, line] : lines, []).join("\n") || "No displayable equipment.";
       const fallback = new EmbedBuilder()
-        .setColor(0xff8000)
+        .setColor(tier.color)
         .setTitle(`${name} · ${realm}`)
         .setURL(character.armoryUrl)
         .setDescription(description)
         .addFields(
-          { name: "GearScore", value: `**${summary.score.toLocaleString()}** · ${scoreBand(summary.score)}`, inline: true },
+          { name: "GearScore", value: `**${summary.score.toLocaleString()}** · ${tier.label}`, inline: true },
           { name: "Average iLvl", value: String(summary.averageItemLevel), inline: true },
           { name: "Items scored", value: `${summary.scoredItemCount}/19`, inline: true },
         )
