@@ -6,7 +6,7 @@ import type { GearItem, GearScoreSummary } from "./gearscore.js";
 import type { UpgradeProfile, UpgradeTarget } from "./upgrade.js";
 import type { ReadyReport } from "./ready.js";
 import type { GuildRoster } from "./guild.js";
-import { gearScoreTier } from "./score-tiers.js";
+import { gearScoreTier, itemGearScoreTier } from "./score-tiers.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LOGO_FILE = join(ROOT, "assets", "pizzawarriors-armory-discord-icon-1024.png");
@@ -53,6 +53,7 @@ function rows(items: GearItem[], scores: Map<number, number>, slots: readonly st
     const item = wanted.get(slot);
     if (!item) return [];
     const score = scores.get(item.id);
+    const scoreColor = score === undefined ? undefined : itemGearScoreTier(score).color;
     const iconUrl = safeIconUrl(item.iconUrl);
     const icon = iconUrl
       ? `<img class="item-icon" src="${escapeHtml(iconUrl)}" alt="">`
@@ -63,7 +64,7 @@ function rows(items: GearItem[], scores: Map<number, number>, slots: readonly st
       <span class="slot">${escapeHtml(item.slot)}</span>
       <span class="item-name" title="${escapeHtml(item.name)}">${escapeHtml(item.name)}</span>
       <span class="level">i${item.itemLevel}</span>
-      <span class="item-score">${score?.toLocaleString() ?? "—"} GS</span>
+      <span class="item-score"${scoreColor ? ` style="color:${scoreColor}"` : ""}>${score?.toLocaleString() ?? "—"} GS</span>
     </div>`;
   }).join("");
 }
@@ -112,7 +113,7 @@ export class ArmoryCardRenderer {
       .stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid #303744; border-bottom: 1px solid #303744; padding: 18px 0; margin-bottom: 22px; }
       .stat { padding: 0 18px; border-left: 1px solid #303744; } .stat:first-child { padding-left: 0; border-left: 0; }
       .label { display: block; color: #a7b0c0; font-size: 13px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase; }
-      .value { display: block; margin-top: 7px; font-size: 31px; line-height: 1; font-weight: 800; letter-spacing: -.7px; } .gear .value, .gear .sub { color: ${tier.color}; } .item-score { color: ${LEGENDARY}; } .level-stat .value, .level { color: #55aaff; }
+      .value { display: block; margin-top: 7px; font-size: 31px; line-height: 1; font-weight: 800; letter-spacing: -.7px; } .gear .value, .gear .sub { color: ${tier.color}; } .item-score { color: #8994a6; } .level-stat .value, .level { color: #55aaff; }
       .sub { display: block; margin-top: 6px; color: #c5ccd7; font-size: 15px; font-weight: 600; }
       .equipment-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; } section + section { margin-top: 22px; } h2 { margin: 0 0 9px; color: #bfc8d6; font-size: 14px; font-weight: 800; letter-spacing: .9px; text-transform: uppercase; }
       .row { display: grid; grid-template-columns: 34px 64px minmax(0, 1fr) 48px 60px; align-items: center; min-height: 43px; gap: 7px; border-top: 1px solid #2a303b; padding: 4px 6px; background: rgba(8,12,18,.15); }
