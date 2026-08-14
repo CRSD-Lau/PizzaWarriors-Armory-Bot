@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
+import { isRecoverableBrowserError } from "./browser-recovery.js";
 import { config } from "./config.js";
 import type { GearItem, GearScoreEquipLoc } from "./gearscore.js";
 
@@ -87,16 +88,51 @@ async function concurrentMap<T, R>(items: T[], limit: number, worker: (item: T) 
 
 export class WarmaneArmory {
   private browser?: Browser;
+  private browserLaunch?: Promise<Browser>;
   private cache?: Cache;
+  private lookupQueue = Promise.resolve();
+  private readonly inFlight = new Map<string, Promise<ArmoryCharacter>>();
 
-  async close(): Promise<void> { await this.browser?.close(); }
+  async close(): Promise<void> { await this.resetBrowser(); }
+
+  /**
+   * Keep public Warmane reads serial. A single lookup fans out to metadata
+   * sources already, and multiple Chrome contexts were the source of the
+   * Windows worker crashes seen during command bursts.
+   */
+  private async queueLookup<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.lookupQueue;
+    let release!: () => void;
+    this.lookupQueue = new Promise<void>((resolve) => { release = resolve; });
+    await previous;
+    try {
+      return await operation();
+    } finally {
+      release();
+    }
+  }
+
+  private async resetBrowser(expected?: Browser): Promise<void> {
+    if (expected && this.browser !== expected) return;
+    const browser = this.browser;
+    this.browser = undefined;
+    this.browserLaunch = undefined;
+    await browser?.close().catch(() => undefined);
+  }
 
   private async getBrowser(): Promise<Browser> {
     // Playwright's bundled headless-shell is a console executable on Windows.
     // Chrome's installed channel is a GUI executable, so command lookups do not
     // create a Windows Terminal tab when this bot launches its browser worker.
-    this.browser ??= await chromium.launch({ headless: config.headless, channel: "chrome" });
-    return this.browser;
+    if (this.browser?.isConnected()) return this.browser;
+    this.browser = undefined;
+    this.browserLaunch ??= chromium.launch({ headless: config.headless, channel: "chrome" })
+      .then((browser) => {
+        this.browser = browser;
+        return browser;
+      })
+      .finally(() => { this.browserLaunch = undefined; });
+    return this.browserLaunch;
   }
 
   private async getItemMetadata(id: number, fallbackEquipLoc: GearScoreEquipLoc): Promise<ItemMetadata> {
@@ -142,8 +178,39 @@ export class WarmaneArmory {
 
   /** Read a public Warmane character, including its first displayed talent specialization when available. */
   async getCharacter(name: string, realm: string): Promise<ArmoryCharacter> {
+    const key = cacheKeyForCharacter(name, realm);
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+
+    const request = this.queueLookup(() => this.getCharacterWithRecovery(name, realm));
+    this.inFlight.set(key, request);
+    try {
+      return await request;
+    } finally {
+      this.inFlight.delete(key);
+    }
+  }
+
+  private async getCharacterWithRecovery(name: string, realm: string): Promise<ArmoryCharacter> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      let browser: Browser | undefined;
+      try {
+        browser = await this.getBrowser();
+        return await this.getCharacterOnce(name, realm, browser);
+      } catch (error) {
+        if (attempt === 0 && isRecoverableBrowserError(error)) {
+          console.warn("Warmane browser worker failed; replacing it and retrying the lookup once.", error);
+          await this.resetBrowser(browser);
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error("Warmane browser recovery exhausted unexpectedly.");
+  }
+
+  private async getCharacterOnce(name: string, realm: string, browser: Browser): Promise<ArmoryCharacter> {
     const url = armoryUrl(name, realm);
-    const browser = await this.getBrowser();
     const context = await browser.newContext({ locale: "en-US", timezoneId: "America/Halifax", userAgent: USER_AGENT });
     if (config.warmaneCookie) {
       const cookies = config.warmaneCookie.split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
@@ -184,7 +251,7 @@ export class WarmaneArmory {
           ?.trim();
         return { ...(className ? { className } : {}), ...(primarySpec ? { primarySpec } : {}) };
       });
-      const items = await concurrentMap(equipped, 5, async (item) => ({
+      const items = await concurrentMap(equipped, 3, async (item) => ({
         id: item.id,
         slot: item.slot,
         ...(item.iconUrl ? { iconUrl: item.iconUrl } : {}),

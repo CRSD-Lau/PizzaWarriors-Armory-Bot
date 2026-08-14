@@ -291,8 +291,14 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 createServer((request, response) => {
-  response.writeHead(request.url === "/healthz" ? 200 : 404, { "content-type": "application/json" });
-  response.end(JSON.stringify({ ok: request.url === "/healthz" }));
+  if (request.url !== "/healthz") {
+    response.writeHead(404, { "content-type": "application/json" });
+    response.end(JSON.stringify({ ok: false }));
+    return;
+  }
+  const healthy = client.isReady();
+  response.writeHead(healthy ? 200 : 503, { "content-type": "application/json" });
+  response.end(JSON.stringify({ ok: healthy, discordReady: client.isReady() }));
 }).listen(config.port);
 
 await registerCommand();
