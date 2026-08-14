@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const pm2 = require("C:/Users/neil_/AppData/Roaming/npm/node_modules/pm2");
 const appName = "pizza-warriors-armory";
+const forceRestart = process.env.PM2_FORCE_RESTART === "1";
 
 function finish(code) {
   pm2.disconnect();
@@ -24,13 +25,14 @@ pm2.connect((connectError) => {
     }
 
     const bot = processes.find((process) => process.name === appName);
-    if (bot?.pm2_env?.status === "online") {
+    if (bot?.pm2_env?.status === "online" && !forceRestart) {
       finish(0);
       return;
     }
 
     // A saved process can already exist in PM2 but be stopped. `resurrect`
-    // intentionally leaves that state alone, so restart it explicitly.
+    // intentionally leaves that state alone, so restart it explicitly. The
+    // same path supports a deliberate, one-shot silent deployment reload.
     if (bot) {
       pm2.restart(appName, (restartError) => {
         if (restartError) {
