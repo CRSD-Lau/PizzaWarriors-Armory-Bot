@@ -47,7 +47,7 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
   const originalFetch = globalThis.fetch;
   const armoryCalls: Array<{ name: string; realm: string }> = [];
   const armory = {
-    async getCharacter(name: string, realm: string) {
+    async getCharacterSummary(name: string, realm: string) {
       armoryCalls.push({ name, realm });
       return {
         armoryUrl: "https://armory.warmane.com/example",

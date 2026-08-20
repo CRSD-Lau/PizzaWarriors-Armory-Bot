@@ -2,18 +2,27 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser, type Page } from "playwright";
-import { isRecoverableBrowserError } from "./browser-recovery.js";
+import { isRecoverableBrowserError, isTransientWarmaneProfileError } from "./browser-recovery.js";
 import { config } from "./config.js";
 import type { GearItem, GearScoreEquipLoc } from "./gearscore.js";
 
 type EquippedSlot = { id: number; slot: string; fallbackEquipLoc: GearScoreEquipLoc; iconUrl?: string };
 type ItemMetadata = Pick<GearItem, "name" | "itemLevel" | "quality" | "equipLoc"> & { fetchedAt: number };
 type Cache = { items: Record<string, ItemMetadata> };
+type WarmaneApiEquipment = { name?: unknown; item?: unknown };
+type WarmaneApiSummary = { class?: unknown; equipment?: unknown; talents?: unknown; error?: unknown };
+type SummaryCacheEntry = { fetchedAt: number; character: ArmoryCharacter };
 export type ArmoryCharacter = { armoryUrl: string; items: GearItem[]; portrait?: Buffer; className?: string; primarySpec?: string };
 
 const CACHE_FILE = join(process.cwd(), ".cache", "items.json");
 const CACHE_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 const USER_AGENT = "PizzaWarriorsArmoryBot/1.0 (+Discord armory lookup)";
+const PROFILE_SELECTOR = "#character-profile, .item-left .item-slot";
+const PROFILE_SELECTOR_TIMEOUT_MS = 8_000;
+const PROFILE_RETRY_DELAY_MS = 250;
+const SUMMARY_REQUEST_INTERVAL_MS = 3_500;
+const SUMMARY_CACHE_AGE_MS = 5 * 60 * 1_000;
+const SUMMARY_STALE_FALLBACK_AGE_MS = 6 * 60 * 60 * 1_000;
 const qualityById: Record<number, string> = { 0: "poor", 1: "common", 2: "uncommon", 3: "rare", 4: "epic", 5: "legendary", 6: "artifact", 7: "heirloom" };
 const inventoryType: Record<number, GearScoreEquipLoc | undefined> = {
   1: "INVTYPE_HEAD", 2: "INVTYPE_NECK", 3: "INVTYPE_SHOULDER", 4: "INVTYPE_BODY", 5: "INVTYPE_CHEST", 6: "INVTYPE_WAIST", 7: "INVTYPE_LEGS", 8: "INVTYPE_FEET", 9: "INVTYPE_WRIST", 10: "INVTYPE_HAND", 11: "INVTYPE_FINGER", 12: "INVTYPE_TRINKET", 13: "INVTYPE_WEAPON", 14: "INVTYPE_SHIELD", 15: "INVTYPE_RANGED", 16: "INVTYPE_CLOAK", 17: "INVTYPE_2HWEAPON", 20: "INVTYPE_ROBE", 21: "INVTYPE_WEAPONMAINHAND", 22: "INVTYPE_WEAPONOFFHAND", 23: "INVTYPE_HOLDABLE", 25: "INVTYPE_THROWN", 26: "INVTYPE_RANGEDRIGHT", 28: "INVTYPE_RELIC",
@@ -28,6 +37,36 @@ const sections: Array<{ selector: string; entries: Array<{ slot: string; fallbac
 function armoryUrl(name: string, realm: string): string {
   const value = name.trim();
   return `https://armory.warmane.com/character/${encodeURIComponent(value[0].toUpperCase() + value.slice(1)).replace(/%20/g, "+")}/${encodeURIComponent(realm).replace(/%20/g, "+")}/summary`;
+}
+
+function armoryApiUrl(name: string, realm: string): string {
+  const value = name.trim();
+  return `https://armory.warmane.com/api/character/${encodeURIComponent(value[0].toUpperCase() + value.slice(1)).replace(/%20/g, "+")}/${encodeURIComponent(realm).replace(/%20/g, "+")}/summary`;
+}
+
+function equipmentSlot(equipLoc: GearScoreEquipLoc | undefined, occupied: Set<string>, fallbackIndex: number): string {
+  const fixed: Partial<Record<GearScoreEquipLoc, string>> = {
+    INVTYPE_HEAD: "Head", INVTYPE_NECK: "Neck", INVTYPE_SHOULDER: "Shoulder", INVTYPE_CLOAK: "Back",
+    INVTYPE_CHEST: "Chest", INVTYPE_ROBE: "Chest", INVTYPE_BODY: "Shirt", INVTYPE_TABARD: "Tabard",
+    INVTYPE_WRIST: "Wrist", INVTYPE_HAND: "Hands", INVTYPE_WAIST: "Waist", INVTYPE_LEGS: "Legs", INVTYPE_FEET: "Feet",
+    INVTYPE_WEAPONOFFHAND: "Off Hand", INVTYPE_SHIELD: "Off Hand", INVTYPE_HOLDABLE: "Off Hand",
+    INVTYPE_RANGED: "Ranged", INVTYPE_RANGEDRIGHT: "Ranged", INVTYPE_THROWN: "Ranged", INVTYPE_RELIC: "Ranged",
+  };
+  let slot = equipLoc ? fixed[equipLoc] : undefined;
+  if (equipLoc === "INVTYPE_FINGER") slot = occupied.has("Ring 1") ? "Ring 2" : "Ring 1";
+  if (equipLoc === "INVTYPE_TRINKET") slot = occupied.has("Trinket 1") ? "Trinket 2" : "Trinket 1";
+  if (equipLoc === "INVTYPE_WEAPON" || equipLoc === "INVTYPE_WEAPONMAINHAND" || equipLoc === "INVTYPE_2HWEAPON") {
+    slot = occupied.has("Main Hand") ? "Off Hand" : "Main Hand";
+  }
+  slot ??= `Unknown ${fallbackIndex + 1}`;
+  occupied.add(slot);
+  return slot;
+}
+
+class WarmaneSummaryRequestError extends Error {
+  constructor(message: string, readonly retryable: boolean) {
+    super(message);
+  }
 }
 
 function normaliseEquipLoc(value: unknown): GearScoreEquipLoc | undefined {
@@ -92,6 +131,8 @@ export class WarmaneArmory {
   private cache?: Cache;
   private lookupQueue = Promise.resolve();
   private readonly inFlight = new Map<string, Promise<ArmoryCharacter>>();
+  private readonly summaryCache = new Map<string, SummaryCacheEntry>();
+  private lastSummaryRequestAt = 0;
 
   async close(): Promise<void> { await this.resetBrowser(); }
 
@@ -135,7 +176,7 @@ export class WarmaneArmory {
     return this.browserLaunch;
   }
 
-  private async getItemMetadata(id: number, fallbackEquipLoc: GearScoreEquipLoc): Promise<ItemMetadata> {
+  private async getItemMetadata(id: number, fallbackEquipLoc?: GearScoreEquipLoc, fallbackName?: string): Promise<ItemMetadata> {
     this.cache ??= await loadCache();
     const cached = this.cache.items[String(id)];
     if (cached && Date.now() - cached.fetchedAt < CACHE_AGE_MS) return cached;
@@ -150,7 +191,14 @@ export class WarmaneArmory {
         if (result.name && result.itemLevel && result.quality && result.equipLoc) break;
       } catch { /* Attempt the next metadata source. */ }
     }
-    const metadata: ItemMetadata = { name: result.name ?? `Item ${id}`, itemLevel: result.itemLevel ?? 0, quality: result.quality ?? "epic", equipLoc: result.equipLoc ?? fallbackEquipLoc, fetchedAt: Date.now() };
+    const equipLoc = result.equipLoc ?? fallbackEquipLoc;
+    const metadata: ItemMetadata = {
+      name: result.name ?? fallbackName ?? `Item ${id}`,
+      itemLevel: result.itemLevel ?? 0,
+      quality: result.quality ?? "epic",
+      ...(equipLoc ? { equipLoc } : {}),
+      fetchedAt: Date.now(),
+    };
     this.cache.items[String(id)] = metadata;
     await saveCache(this.cache);
     return metadata;
@@ -191,16 +239,119 @@ export class WarmaneArmory {
     }
   }
 
+  /**
+   * Read the structured character summary without loading the visual Armory.
+   * Raid rosters use this path because Warmane rate-limits the API that powers
+   * its profile page; a shared 3.5 second cadence avoids incomplete page shells.
+   */
+  async getCharacterSummary(name: string, realm: string): Promise<ArmoryCharacter> {
+    const key = cacheKeyForCharacter(name, realm);
+    const cached = this.summaryCache.get(key);
+    if (cached && Date.now() - cached.fetchedAt < SUMMARY_CACHE_AGE_MS) return cached.character;
+
+    const inFlightKey = `summary:${key}`;
+    const existing = this.inFlight.get(inFlightKey);
+    if (existing) return existing;
+    const request = this.queueLookup(() => this.getCharacterSummaryWithRecovery(name, realm));
+    this.inFlight.set(inFlightKey, request);
+    try {
+      const character = await request;
+      this.summaryCache.set(key, { fetchedAt: Date.now(), character });
+      return character;
+    } catch (error) {
+      if (cached && Date.now() - cached.fetchedAt < SUMMARY_STALE_FALLBACK_AGE_MS) {
+        console.warn(`Warmane summary failed for ${name}-${realm}; using the recent cached snapshot.`, error);
+        return cached.character;
+      }
+      throw error;
+    } finally {
+      this.inFlight.delete(inFlightKey);
+    }
+  }
+
+  private async getCharacterSummaryWithRecovery(name: string, realm: string): Promise<ArmoryCharacter> {
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await this.getCharacterSummaryOnce(name, realm);
+      } catch (error) {
+        const retryable = error instanceof WarmaneSummaryRequestError
+          ? error.retryable
+          : /fetch failed|timeout|timed out|aborted|network/i.test(error instanceof Error ? error.message : String(error));
+        if (!retryable || attempt === 2) throw error;
+        console.warn(`Warmane summary request failed for ${name}-${realm}; retrying after the shared rate-limit interval.`);
+      }
+    }
+    throw new Error("Warmane summary recovery exhausted unexpectedly.");
+  }
+
+  private async getCharacterSummaryOnce(name: string, realm: string): Promise<ArmoryCharacter> {
+    const waitMs = SUMMARY_REQUEST_INTERVAL_MS - (Date.now() - this.lastSummaryRequestAt);
+    if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
+    this.lastSummaryRequestAt = Date.now();
+
+    const response = await fetch(armoryApiUrl(name, realm), {
+      headers: { accept: "application/json", "user-agent": USER_AGENT },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new WarmaneSummaryRequestError(
+        response.status === 429 ? "Warmane rate limited the character summary request." : `Warmane returned ${response.status} for that character.`,
+        response.status === 429 || response.status >= 500,
+      );
+    }
+    const payload = await response.json() as WarmaneApiSummary;
+    const apiError = typeof payload.error === "string" ? payload.error.trim() : "";
+    if (apiError) throw new WarmaneSummaryRequestError(`Warmane Armory: ${apiError}`, /too many requests|temporar|try again/i.test(apiError));
+    if (!Array.isArray(payload.equipment) || !payload.equipment.length) {
+      throw new WarmaneSummaryRequestError("No equipped items were found. The character may not exist.", false);
+    }
+
+    const equipment = payload.equipment.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const item = entry as WarmaneApiEquipment;
+      const id = Number(String(item.item ?? "").match(/^\d+/)?.[0]);
+      if (!id) return [];
+      return [{ id, name: typeof item.name === "string" ? item.name.trim() : undefined }];
+    });
+    const metadata = await concurrentMap(equipment, 3, async (item) => ({
+      id: item.id,
+      ...(await this.getItemMetadata(item.id, undefined, item.name)),
+    }));
+    const occupied = new Set<string>();
+    const items: GearItem[] = metadata.map((item, index) => ({
+      ...item,
+      slot: equipmentSlot(item.equipLoc, occupied, index),
+    }));
+    const talents = Array.isArray(payload.talents) ? payload.talents : [];
+    const primaryTalent = talents.find((talent) => talent && typeof talent === "object" && typeof (talent as { tree?: unknown }).tree === "string") as { tree?: string } | undefined;
+    const className = typeof payload.class === "string" && payload.class.trim() ? payload.class.trim() : undefined;
+    return {
+      armoryUrl: armoryUrl(name, realm),
+      items,
+      ...(className ? { className } : {}),
+      ...(primaryTalent?.tree ? { primarySpec: primaryTalent.tree.trim() } : {}),
+    };
+  }
+
   private async getCharacterWithRecovery(name: string, realm: string): Promise<ArmoryCharacter> {
-    for (let attempt = 0; attempt < 2; attempt++) {
+    let browserRetriesRemaining = 1;
+    let profileRetriesRemaining = 1;
+    for (let attempt = 0; attempt < 3; attempt++) {
       let browser: Browser | undefined;
       try {
         browser = await this.getBrowser();
         return await this.getCharacterOnce(name, realm, browser);
       } catch (error) {
-        if (attempt === 0 && isRecoverableBrowserError(error)) {
+        if (browserRetriesRemaining > 0 && isRecoverableBrowserError(error)) {
+          browserRetriesRemaining--;
           console.warn("Warmane browser worker failed; replacing it and retrying the lookup once.", error);
           await this.resetBrowser(browser);
+          continue;
+        }
+        if (profileRetriesRemaining > 0 && isTransientWarmaneProfileError(error)) {
+          profileRetriesRemaining--;
+          console.warn(`Warmane profile did not load for ${name}-${realm}; retrying the lookup once.`);
+          await new Promise((resolve) => setTimeout(resolve, PROFILE_RETRY_DELAY_MS));
           continue;
         }
         throw error;
@@ -224,7 +375,7 @@ export class WarmaneArmory {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
       // Warmane keeps a profile template in the DOM that can be visually hidden while its
       // equipment is usable. Wait for attachment rather than Playwright visibility.
-      await page.waitForSelector("#character-profile, .item-left .item-slot", { state: "attached", timeout: 15_000 });
+      await page.waitForSelector(PROFILE_SELECTOR, { state: "attached", timeout: PROFILE_SELECTOR_TIMEOUT_MS });
       const equipped = await page.evaluate((pageSections) => pageSections.flatMap(({ selector, entries }) => {
         const root = document.querySelector(selector);
         if (!root) return [];

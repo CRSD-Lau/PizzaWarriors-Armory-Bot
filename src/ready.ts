@@ -214,7 +214,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
       let realm = input.realm;
       let character: ArmoryCharacter;
       try {
-        character = await input.armory.getCharacter(characterName, realm);
+        character = await input.armory.getCharacterSummary(characterName, realm);
       } catch (directError) {
         // The event name is always the first and preferred Armory lookup. A
         // voluntary /raider link exists only as a fallback for Discord names
@@ -222,7 +222,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
         if (!link || (link.name === directCharacterName && link.realm === realm)) throw directError;
         characterName = link.name;
         realm = link.realm;
-        character = await input.armory.getCharacter(characterName, realm);
+        character = await input.armory.getCharacterSummary(characterName, realm);
       }
       const summary = calculateGearScore(character.items);
       if (!summary) throw new Error("insufficient equipped-item data");
