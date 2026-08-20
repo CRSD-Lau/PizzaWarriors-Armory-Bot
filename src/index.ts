@@ -173,8 +173,8 @@ client.on("interactionCreate", async (interaction) => {
     await interaction.reply({ content: "Building raid-readiness card…", flags: MessageFlags.SuppressNotifications });
     try {
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
-      if (!report.signups.length) {
-        await interaction.editReply("I found that Raid-Helper event, but it has no active signups I can read yet. Use the original event message link/ID and make sure attendees are signed rather than benched or tentative.");
+      if (!report.activeSignups.length) {
+        await interaction.editReply("I found that Raid-Helper event, but it has no signed or late attendees to check yet. Tentative, bench, and absent selections are shown separately and are not counted as raid-ready.");
         return;
       }
       const cardName = `raid-ready-${report.eventId}.png`;

@@ -1,15 +1,17 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { calculateGearScore, type GearScoreSummary } from "./gearscore.js";
-import { WarmaneArmory } from "./armory.js";
+import { WarmaneArmory, type ArmoryCharacter } from "./armory.js";
 
 const RAID_HELPER_API = "https://raid-helper.xyz/api/v4/events";
 const LINKS_FILE = join(process.cwd(), "data", "raider-links.json");
 
 export type RaiderLink = { name: string; realm: string };
-export type RaidSignup = { discordUserId: string; displayName: string; reportedSpec?: string; status: string };
+export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
+export type RaidSignup = { discordUserId: string; displayName: string; reportedSpec?: string; status: RaidAttendance };
 export type ReadyMember = {
   signup: RaidSignup;
+  /** The character name resolved in Armory; the card always presents the event signup name. */
   characterName: string;
   className?: string;
   specName?: string;
@@ -20,6 +22,7 @@ export type ReadyReport = {
   eventId: string;
   eventTitle: string;
   signups: RaidSignup[];
+  activeSignups: RaidSignup[];
   members: ReadyMember[];
   unresolved: Array<{ signup: RaidSignup; reason: string }>;
 };
@@ -39,19 +42,34 @@ function firstText(record: Record<string, unknown>, keys: string[]): string | un
   return undefined;
 }
 
-function statusForKey(key?: string): string | undefined {
-  if (!key) return undefined;
-  const value = key.toLowerCase();
-  if (value.includes("bench")) return "Bench";
-  if (value.includes("late")) return "Late";
-  if (value.includes("tentative")) return "Tentative";
-  if (value.includes("absence") || value.includes("declined")) return "Absent";
-  if (value.includes("sign")) return "Signed";
+function attendanceForValue(value?: string): RaidAttendance | undefined {
+  if (!value) return undefined;
+  const normalized = value.toLowerCase().replace(/[\s_-]+/g, "");
+  if (normalized.includes("bench")) return "Bench";
+  if (normalized.includes("late")) return "Late";
+  if (normalized.includes("tentative")) return "Tentative";
+  if (normalized.includes("absence") || normalized.includes("absent") || normalized.includes("declined")) return "Absent";
+  if (normalized.includes("sign") || normalized === "primary") return "Signed";
   return undefined;
 }
 
+function attendanceForRecord(record: Record<string, unknown>, inheritedStatus?: RaidAttendance, objectKey?: string): RaidAttendance {
+  // Raid-Helper v4 identifies Bench, Tentative, Late, and Absence using the
+  // selected event class. Its `status: primary` means this is the member's
+  // primary signup—not that they are an active raider.
+  return attendanceForValue(firstText(record, ["cClassName", "className"]))
+    ?? attendanceForValue(firstText(record, ["status", "signup_status"]))
+    ?? attendanceForValue(objectKey)
+    ?? inheritedStatus
+    ?? "Signed";
+}
+
+function statusForKey(key?: string): RaidAttendance | undefined {
+  return attendanceForValue(key);
+}
+
 function extractSpec(record: Record<string, unknown>): string | undefined {
-  const direct = firstText(record, ["spec", "specialization", "role"]);
+  const direct = firstText(record, ["cSpecName", "specName", "spec", "specialization", "role"]);
   if (direct) return direct;
   const values = record.specs;
   if (Array.isArray(values)) {
@@ -64,23 +82,24 @@ function extractSpec(record: Record<string, unknown>): string | undefined {
 /** Interpret Raid-Helper's public event response without relying on one template layout. */
 export function parseRaidHelperSignups(payload: unknown): RaidSignup[] {
   const found = new Map<string, RaidSignup>();
-  const walk = (value: unknown, inheritedStatus?: string, objectKey?: string): void => {
+  const walk = (value: unknown, inheritedStatus?: RaidAttendance, objectKey?: string): void => {
     if (Array.isArray(value)) {
       value.forEach((entry) => walk(entry, inheritedStatus));
       return;
     }
     if (!isRecord(value)) return;
-    const status = firstText(value, ["status", "signup_status"]) ?? statusForKey(objectKey) ?? inheritedStatus ?? "Signed";
+    const status = attendanceForRecord(value, inheritedStatus, objectKey);
     const discordUserId = firstText(value, ["entity_id", "entityId", "user_id", "userId", "member_id", "memberId", "discord_id", "discordId"])
       ?? (objectKey && /^\d{16,22}$/.test(objectKey) ? objectKey : undefined);
     const displayName = firstText(value, ["name", "display_name", "displayName", "nickname", "username", "character", "character_name"]);
     if (discordUserId && displayName) {
-      found.set(discordUserId, { discordUserId, displayName, reportedSpec: extractSpec(value), status });
+      const reportedSpec = extractSpec(value);
+      found.set(discordUserId, { discordUserId, displayName, ...(reportedSpec ? { reportedSpec } : {}), status });
     }
     for (const [key, child] of Object.entries(value)) walk(child, statusForKey(key) ?? status, key);
   };
   walk(payload);
-  return [...found.values()].filter((signup) => !/bench|late|tentative|absent|declined/i.test(signup.status));
+  return [...found.values()];
 }
 
 function eventIdFromInput(value: string): string | undefined {
@@ -145,15 +164,31 @@ async function concurrentMap<T, R>(items: readonly T[], limit: number, worker: (
 
 export async function buildReadyReport(input: { event: string; realm: string; guildId: string; armory: WarmaneArmory; links: RaiderLinks }): Promise<ReadyReport> {
   const event = await getRaidHelperEvent(input.event);
-  const results = await concurrentMap(event.signups, 4, async (signup) => {
+  // Bench, tentative, and absent members are intentionally retained in the
+  // report, but are not sent through Armory just to calculate raid readiness.
+  // Late attendees remain in the live roster because they are still committed.
+  const activeSignups = event.signups.filter((signup) => signup.status === "Signed" || signup.status === "Late");
+  const results = await concurrentMap(activeSignups, 4, async (signup) => {
     const link = await input.links.get(input.guildId, signup.discordUserId);
-    const characterName = link?.name ?? signup.displayName;
-    const realm = link?.realm ?? input.realm;
+    const directCharacterName = signup.displayName;
     try {
-      const character = await input.armory.getCharacter(characterName, realm);
+      let characterName = directCharacterName;
+      let realm = input.realm;
+      let character: ArmoryCharacter;
+      try {
+        character = await input.armory.getCharacter(characterName, realm);
+      } catch (directError) {
+        // The event name is always the first and preferred Armory lookup. A
+        // voluntary /raider link exists only as a fallback for Discord names
+        // that are not the character's actual Armory name.
+        if (!link || (link.name === directCharacterName && link.realm === realm)) throw directError;
+        characterName = link.name;
+        realm = link.realm;
+        character = await input.armory.getCharacter(characterName, realm);
+      }
       const summary = calculateGearScore(character.items);
       if (!summary) throw new Error("insufficient equipped-item data");
-      return { kind: "member" as const, member: { signup, characterName, className: character.className, specName: signup.reportedSpec ?? character.primarySpec, summary, armoryUrl: character.armoryUrl } };
+      return { kind: "member" as const, member: { signup, characterName, className: character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, armoryUrl: character.armoryUrl } };
     } catch (error) {
       return { kind: "unresolved" as const, unresolved: { signup, reason: error instanceof Error ? error.message : "armory lookup failed" } };
     }
@@ -162,6 +197,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
     eventId: event.eventId,
     eventTitle: event.title,
     signups: event.signups,
+    activeSignups,
     members: results.filter((result): result is Extract<typeof result, { kind: "member" }> => result.kind === "member").map((result) => result.member),
     unresolved: results.filter((result): result is Extract<typeof result, { kind: "unresolved" }> => result.kind === "unresolved").map((result) => result.unresolved),
   };
