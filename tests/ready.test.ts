@@ -22,24 +22,24 @@ const signups = parseRaidHelperSignups({
 });
 
 assert.deepEqual(signups, [
-  { discordUserId: "123456789012345678", displayName: "Lausudo", reportedSpec: "Protection", status: "Signed" },
-  { discordUserId: "123456789012345679", displayName: "Qwark", reportedSpec: "Retribution", status: "Signed" },
-  { discordUserId: "123456789012345680", displayName: "Benchwarrior", reportedSpec: "Fury", status: "Bench" },
-  { discordUserId: "123456789012345681", displayName: "Maybepriest", reportedSpec: "Discipline", status: "Tentative" },
+  { discordUserId: "123456789012345678", displayName: "Lausudo", reportedSpec: "Protection", reportedRole: "Tanks", status: "Signed" },
+  { discordUserId: "123456789012345679", displayName: "Qwark", reportedSpec: "Retribution", reportedRole: "Melee", status: "Signed" },
+  { discordUserId: "123456789012345680", displayName: "Benchwarrior", reportedSpec: "Fury", reportedRole: "Melee", status: "Bench" },
+  { discordUserId: "123456789012345681", displayName: "Maybepriest", reportedSpec: "Discipline", reportedRole: "Healers", status: "Tentative" },
   { discordUserId: "123456789012345682", displayName: "Awaymage", status: "Absent" },
 ]);
 
 const v4Signups = parseRaidHelperSignups({
   signUps: [
-    { userId: "123456789012345690", name: "Activepal", cClassName: "Paladin", specName: "Retribution", status: "primary" },
+    { userId: "123456789012345690", name: "Activepal", cClassName: "Paladin", specName: "Retribution", roleName: "Melee", status: "primary" },
     { userId: "123456789012345691", name: "Benchdruid", cClassName: "Bench", specName: "Feral", status: "primary" },
     { userId: "123456789012345692", name: "Awayrogue", cClassName: "Absence", status: "primary" },
   ],
 });
 
 assert.deepEqual(v4Signups, [
-  { discordUserId: "123456789012345690", displayName: "Activepal", reportedSpec: "Retribution", status: "Signed" },
-  { discordUserId: "123456789012345691", displayName: "Benchdruid", reportedSpec: "Feral", status: "Bench" },
+  { discordUserId: "123456789012345690", displayName: "Activepal", reportedSpec: "Retribution", reportedRole: "Melee", status: "Signed" },
+  { discordUserId: "123456789012345691", displayName: "Benchdruid", reportedSpec: "Feral", reportedRole: "Melee", status: "Bench" },
   { discordUserId: "123456789012345692", displayName: "Awayrogue", status: "Absent" },
 ]);
 
@@ -65,7 +65,7 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
     id: "1538061412356722709",
     title: "Test raid",
     signUps: [
-      { userId: "123456789012345699", name: "EventCharacter", cClassName: "Paladin", specName: "Retribution", status: "primary" },
+      { userId: "123456789012345699", name: "EventCharacter", cClassName: "Paladin", specName: "Retribution", roleName: "Melee", status: "primary" },
       { userId: "123456789012345698", name: "BenchCharacter", cClassName: "Bench", specName: "Feral", status: "primary" },
     ],
   }), { status: 200, headers: { "content-type": "application/json" } });
@@ -76,6 +76,7 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
     assert.equal(report.activeSignups.length, 1);
     assert.equal(report.members[0]?.signup.displayName, "EventCharacter");
     assert.equal(report.members[0]?.specName, "Retribution");
+    assert.equal(report.members[0]?.signup.reportedRole, "Melee");
     assert.equal(report.signups[1]?.status, "Bench");
   } finally {
     globalThis.fetch = originalFetch;

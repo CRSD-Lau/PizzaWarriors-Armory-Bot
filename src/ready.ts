@@ -10,7 +10,8 @@ const CORE_EVENT_KEY = "pizzacoreicc25";
 
 export type RaiderLink = { name: string; realm: string };
 export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
-export type RaidSignup = { discordUserId: string; displayName: string; reportedSpec?: string; status: RaidAttendance };
+export type RaidRole = "Tanks" | "Healers" | "Melee" | "Ranged";
+export type RaidSignup = { discordUserId: string; displayName: string; reportedSpec?: string; reportedRole?: RaidRole; status: RaidAttendance };
 export type ReadyMember = {
   signup: RaidSignup;
   /** The character name resolved in Armory; the card always presents the event signup name. */
@@ -83,6 +84,30 @@ function extractSpec(record: Record<string, unknown>): string | undefined {
   return undefined;
 }
 
+function normalizeRaidRole(value?: string): RaidRole | undefined {
+  const normalized = value?.toLowerCase().replace(/[\s_-]+/g, "");
+  if (!normalized) return undefined;
+  if (normalized === "tank" || normalized === "tanks") return "Tanks";
+  if (normalized === "healer" || normalized === "healers" || normalized === "heal") return "Healers";
+  if (normalized === "melee" || normalized === "meleedps") return "Melee";
+  if (normalized === "ranged" || normalized === "rangedps") return "Ranged";
+  return undefined;
+}
+
+function roleForSpec(value?: string): RaidRole | undefined {
+  const spec = value?.toLowerCase().replace(/[\s_-]+/g, "").replace(/\d+$/, "");
+  if (!spec) return undefined;
+  if (/^(protection|bloodtank|feraltank|guardian)$/.test(spec)) return "Tanks";
+  if (/^(holy|discipline|restoration|resto)$/.test(spec)) return "Healers";
+  if (/^(arms|fury|retribution|assassination|combat|subtlety|enhancement|unholy|feral|feralcat)$/.test(spec)) return "Melee";
+  if (/^(balance|elemental|shadow|arcane|fire|affliction|demonology|destruction|beastmastery|marksmanship|marksman|survival)$/.test(spec)) return "Ranged";
+  return undefined;
+}
+
+function extractRole(record: Record<string, unknown>, reportedSpec?: string): RaidRole | undefined {
+  return normalizeRaidRole(firstText(record, ["cRoleName", "roleName", "role_name", "raidRole"])) ?? roleForSpec(reportedSpec);
+}
+
 /** Interpret Raid-Helper's public event response without relying on one template layout. */
 export function parseRaidHelperSignups(payload: unknown): RaidSignup[] {
   const found = new Map<string, RaidSignup>();
@@ -98,7 +123,8 @@ export function parseRaidHelperSignups(payload: unknown): RaidSignup[] {
     const displayName = firstText(value, ["name", "display_name", "displayName", "nickname", "username", "character", "character_name"]);
     if (discordUserId && displayName) {
       const reportedSpec = extractSpec(value);
-      found.set(discordUserId, { discordUserId, displayName, ...(reportedSpec ? { reportedSpec } : {}), status });
+      const reportedRole = extractRole(value, reportedSpec);
+      found.set(discordUserId, { discordUserId, displayName, ...(reportedSpec ? { reportedSpec } : {}), ...(reportedRole ? { reportedRole } : {}), status });
     }
     for (const [key, child] of Object.entries(value)) walk(child, statusForKey(key) ?? status, key);
   };
