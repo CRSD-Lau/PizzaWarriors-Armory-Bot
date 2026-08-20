@@ -6,6 +6,7 @@ import { WarmaneArmory, type ArmoryCharacter } from "./armory.js";
 const RAID_HELPER_API = "https://raid-helper.xyz/api/v4/events";
 const LINKS_FILE = join(process.cwd(), "data", "raider-links.json");
 const RECENT_EVENTS_FILE = join(process.cwd(), "data", "recent-ready-events.json");
+const CORE_EVENT_KEY = "pizzacoreicc25";
 
 export type RaiderLink = { name: string; realm: string };
 export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
@@ -164,15 +165,21 @@ export class RecentReadyEvents {
     return this.store;
   }
 
-  async latest(guildId: string): Promise<RecentReadyEvent | undefined> {
-    return (await this.load())[guildId]?.[0];
+  private isCoreEvent(event: Pick<RecentReadyEvent, "title">): boolean {
+    return event.title.toLowerCase().replace(/[^a-z0-9]+/g, "").includes(CORE_EVENT_KEY);
   }
 
-  async list(guildId: string): Promise<RecentReadyEvent[]> {
-    return (await this.load())[guildId] ?? [];
+  async core(guildId: string): Promise<RecentReadyEvent | undefined> {
+    return (await this.load())[guildId]?.find((event) => this.isCoreEvent(event));
   }
 
-  async remember(guildId: string, event: Pick<RecentReadyEvent, "eventId" | "title">): Promise<void> {
+  async listCore(guildId: string): Promise<RecentReadyEvent[]> {
+    return ((await this.load())[guildId] ?? []).filter((event) => this.isCoreEvent(event));
+  }
+
+  /** Other Raid-Helper events must never replace the Pizza Core default. */
+  async rememberCore(guildId: string, event: Pick<RecentReadyEvent, "eventId" | "title">): Promise<void> {
+    if (!this.isCoreEvent(event)) return;
     const store = await this.load();
     const previous = store[guildId] ?? [];
     store[guildId] = [{ ...event, usedAt: Date.now() }, ...previous.filter((entry) => entry.eventId !== event.eventId)].slice(0, 12);

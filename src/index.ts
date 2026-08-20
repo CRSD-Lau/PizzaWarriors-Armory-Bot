@@ -45,8 +45,8 @@ const upgradeCommand = new SlashCommandBuilder()
 
 const readyCommand = new SlashCommandBuilder()
   .setName("ready")
-  .setDescription("Show GearScore and event-selected specs for the latest Raid-Helper roster")
-  .addStringOption((option) => option.setName("event").setDescription("Optional: paste a new message link or choose a recent event").setAutocomplete(true))
+  .setDescription("Show GearScore and event-selected specs for Pizza Core ICC25")
+  .addStringOption((option) => option.setName("event").setDescription("Optional: paste the current Pizza Core ICC25 message link").setAutocomplete(true))
   .addStringOption((option) => option.setName("realm").setDescription("Default realm for unlinked characters").addChoices(
     { name: "Lordaeron", value: "Lordaeron" },
     { name: "Icecrown", value: "Icecrown" },
@@ -125,7 +125,7 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
     if (interaction.commandName === "ready" && interaction.guildId) {
-      const events = (await recentReadyEvents.list(interaction.guildId))
+      const events = (await recentReadyEvents.listCore(interaction.guildId))
         .filter((event) => `${event.title} ${event.eventId}`.toLowerCase().includes(query))
         .slice(0, 25);
       await interaction.respond(events.map((event) => ({ name: `${event.title} · ${event.eventId}`, value: event.eventId })));
@@ -178,17 +178,17 @@ client.on("interactionCreate", async (interaction) => {
       return;
     }
     const suppliedEvent = interaction.options.getString("event")?.trim();
-    const savedEvent = suppliedEvent ? undefined : await recentReadyEvents.latest(interaction.guildId);
+    const savedEvent = suppliedEvent ? undefined : await recentReadyEvents.core(interaction.guildId);
     if (!suppliedEvent && !savedEvent) {
-      await interaction.reply({ content: "No recent Raid-Helper event is saved yet. Run **/ready** once with the Raid-Helper event message link; after that, plain **/ready** will use it automatically.", flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: "No Pizza Core ICC25 event is saved yet. Run **/ready** once with that Raid-Helper message link; after that, plain **/ready** will use it automatically.", flags: MessageFlags.Ephemeral });
       return;
     }
     const event = suppliedEvent ?? savedEvent!.eventId;
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
-    await interaction.reply({ content: suppliedEvent ? "Building raid-readiness card…" : `Building raid-readiness card for **${savedEvent!.title}**…`, flags: MessageFlags.SuppressNotifications });
+    await interaction.reply({ content: suppliedEvent ? "Building Pizza Core raid-readiness card…" : `Building raid-readiness card for **${savedEvent!.title}**…`, flags: MessageFlags.SuppressNotifications });
     try {
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
-      await recentReadyEvents.remember(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
+      await recentReadyEvents.rememberCore(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
       if (!report.activeSignups.length) {
         await interaction.editReply("I found that Raid-Helper event, but it has no signed or late attendees to check yet. Tentative, bench, and absent selections are shown separately and are not counted as raid-ready.");
         return;
