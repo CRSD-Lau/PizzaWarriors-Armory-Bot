@@ -18,7 +18,7 @@ import { ArmoryCardRenderer } from "./card.js";
 import { config } from "./config.js";
 import { calculateGearScore } from "./gearscore.js";
 import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
-import { buildReadyReport, RaiderLinks } from "./ready.js";
+import { buildReadyReport, RaiderLinks, RecentReadyEvents } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
 
@@ -45,8 +45,8 @@ const upgradeCommand = new SlashCommandBuilder()
 
 const readyCommand = new SlashCommandBuilder()
   .setName("ready")
-  .setDescription("Show GearScore and specs for a live Raid-Helper signup roster")
-  .addStringOption((option) => option.setName("event").setDescription("Raid-Helper event message link or copied event ID").setRequired(true))
+  .setDescription("Show GearScore and event-selected specs for the latest Raid-Helper roster")
+  .addStringOption((option) => option.setName("event").setDescription("Optional: paste a new message link or choose a recent event").setAutocomplete(true))
   .addStringOption((option) => option.setName("realm").setDescription("Default realm for unlinked characters").addChoices(
     { name: "Lordaeron", value: "Lordaeron" },
     { name: "Icecrown", value: "Icecrown" },
@@ -78,6 +78,7 @@ const rosterCommand = new SlashCommandBuilder()
 const armory = new WarmaneArmory();
 const cards = new ArmoryCardRenderer();
 const raiderLinks = new RaiderLinks();
+const recentReadyEvents = new RecentReadyEvents();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const lookupCooldowns = new Map<string, number>();
 const LOOKUP_COOLDOWN_MS = 10_000;
@@ -118,9 +119,17 @@ async function registerCommand(): Promise<void> {
 client.once(Events.ClientReady, () => console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`));
 client.on("interactionCreate", async (interaction) => {
   if (interaction.isAutocomplete()) {
-    if (interaction.commandName !== "upgrade") return;
     const query = interaction.options.getFocused().toLowerCase();
-    await interaction.respond(upgradeSpecNames.filter((specName) => specName.toLowerCase().includes(query)).slice(0, 25).map((specName) => ({ name: specName, value: specName })));
+    if (interaction.commandName === "upgrade") {
+      await interaction.respond(upgradeSpecNames.filter((specName) => specName.toLowerCase().includes(query)).slice(0, 25).map((specName) => ({ name: specName, value: specName })));
+      return;
+    }
+    if (interaction.commandName === "ready" && interaction.guildId) {
+      const events = (await recentReadyEvents.list(interaction.guildId))
+        .filter((event) => `${event.title} ${event.eventId}`.toLowerCase().includes(query))
+        .slice(0, 25);
+      await interaction.respond(events.map((event) => ({ name: `${event.title} · ${event.eventId}`, value: event.eventId })));
+    }
     return;
   }
   if (interaction.isButton() && interaction.customId.startsWith("roster:")) {
@@ -168,11 +177,18 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.reply({ content: "Use this command inside the PizzaWarriors server.", flags: MessageFlags.Ephemeral });
       return;
     }
-    const event = interaction.options.getString("event", true);
+    const suppliedEvent = interaction.options.getString("event")?.trim();
+    const savedEvent = suppliedEvent ? undefined : await recentReadyEvents.latest(interaction.guildId);
+    if (!suppliedEvent && !savedEvent) {
+      await interaction.reply({ content: "No recent Raid-Helper event is saved yet. Run **/ready** once with the Raid-Helper event message link; after that, plain **/ready** will use it automatically.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const event = suppliedEvent ?? savedEvent!.eventId;
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
-    await interaction.reply({ content: "Building raid-readiness card…", flags: MessageFlags.SuppressNotifications });
+    await interaction.reply({ content: suppliedEvent ? "Building raid-readiness card…" : `Building raid-readiness card for **${savedEvent!.title}**…`, flags: MessageFlags.SuppressNotifications });
     try {
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
+      await recentReadyEvents.remember(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
       if (!report.activeSignups.length) {
         await interaction.editReply("I found that Raid-Helper event, but it has no signed or late attendees to check yet. Tentative, bench, and absent selections are shown separately and are not counted as raid-ready.");
         return;

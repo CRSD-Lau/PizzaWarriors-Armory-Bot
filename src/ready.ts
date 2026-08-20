@@ -5,6 +5,7 @@ import { WarmaneArmory, type ArmoryCharacter } from "./armory.js";
 
 const RAID_HELPER_API = "https://raid-helper.xyz/api/v4/events";
 const LINKS_FILE = join(process.cwd(), "data", "raider-links.json");
+const RECENT_EVENTS_FILE = join(process.cwd(), "data", "recent-ready-events.json");
 
 export type RaiderLink = { name: string; realm: string };
 export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
@@ -28,6 +29,8 @@ export type ReadyReport = {
 };
 
 type LinkStore = Record<string, RaiderLink>;
+export type RecentReadyEvent = { eventId: string; title: string; usedAt: number };
+type RecentEventStore = Record<string, RecentReadyEvent[]>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -147,6 +150,34 @@ export class RaiderLinks {
     await mkdir(dirname(LINKS_FILE), { recursive: true });
     await writeFile(LINKS_FILE, JSON.stringify(store, null, 2));
     return true;
+  }
+}
+
+/** Remembers a small, per-guild event list for `/ready` and autocomplete. */
+export class RecentReadyEvents {
+  private store?: RecentEventStore;
+
+  private async load(): Promise<RecentEventStore> {
+    if (this.store) return this.store;
+    try { this.store = JSON.parse(await readFile(RECENT_EVENTS_FILE, "utf8")) as RecentEventStore; }
+    catch { this.store = {}; }
+    return this.store;
+  }
+
+  async latest(guildId: string): Promise<RecentReadyEvent | undefined> {
+    return (await this.load())[guildId]?.[0];
+  }
+
+  async list(guildId: string): Promise<RecentReadyEvent[]> {
+    return (await this.load())[guildId] ?? [];
+  }
+
+  async remember(guildId: string, event: Pick<RecentReadyEvent, "eventId" | "title">): Promise<void> {
+    const store = await this.load();
+    const previous = store[guildId] ?? [];
+    store[guildId] = [{ ...event, usedAt: Date.now() }, ...previous.filter((entry) => entry.eventId !== event.eventId)].slice(0, 12);
+    await mkdir(dirname(RECENT_EVENTS_FILE), { recursive: true });
+    await writeFile(RECENT_EVENTS_FILE, JSON.stringify(store, null, 2));
   }
 }
 
