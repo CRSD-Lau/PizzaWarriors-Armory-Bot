@@ -28,6 +28,10 @@ const weaponSlots = ["Main Hand", "Off Hand", "Ranged"] as const;
 const qualityColors: Record<string, string> = {
   poor: "#9d9d9d", common: "#f0f0f0", uncommon: "#1eff00", rare: "#0070dd", epic: "#a335ee", legendary: LEGENDARY, artifact: "#e6cc80", heirloom: "#00ccff",
 };
+const classColors: Record<string, string> = {
+  "Death Knight": "#c41f3b", Druid: "#ff7d0a", Hunter: "#abd473", Mage: "#69ccf0", Paladin: "#f58cba",
+  Priest: "#ffffff", Rogue: "#fff569", Shaman: "#0070de", Warlock: "#9482c9", Warrior: "#c79c6e",
+};
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
@@ -233,7 +237,7 @@ export class ArmoryCardRenderer {
       const average = members.length ? Math.round(members.reduce((total, member) => total + member.summary.score, 0) / members.length) : 0;
       const ready = members.filter((member) => member.summary.score >= 5_000).length;
       const formatSpec = (value: string) => value.replace(/_/g, " ").replace(/(?<=\D)1$/, "");
-      const rosterRows = (list: typeof members) => list.map((member) => `<div class="ready-row"><span class="ready-name">${escapeHtml(member.signup.displayName)}</span><span class="ready-spec">${escapeHtml(formatSpec(member.specName ?? "No event spec selected"))}</span><span class="ready-ilvl">i${member.summary.averageItemLevel}</span><span class="ready-gs ${member.summary.score >= 5_000 ? "ready" : "review"}">${member.summary.score.toLocaleString()}</span></div>`).join("");
+      const rosterRows = (list: typeof members) => list.map((member) => `<div class="ready-row"><span class="ready-name" style="color:${classColors[member.className ?? ""] ?? "#f1f3f7"}">${escapeHtml(member.signup.displayName)}</span><span class="ready-spec">${escapeHtml(formatSpec(member.specName ?? "No event spec selected"))}</span><span class="ready-ilvl">i${member.summary.averageItemLevel}</span><span class="ready-gs ${member.summary.score >= 5_000 ? "ready" : "review"}">${member.summary.score.toLocaleString()}</span></div>`).join("");
       const midpoint = Math.ceil(members.length / 2);
       const statusNames = (status: "Late" | "Tentative" | "Bench" | "Absent") => {
         const people = attendance(status);
@@ -258,7 +262,6 @@ export class ArmoryCardRenderer {
     const members = input.roster.members.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
     const context = await browser.newContext({ viewport: { width: 920, height: 1_100 }, deviceScaleFactor: 2 });
     const page = await context.newPage();
-    const classColors: Record<string, string> = { "Death Knight": "#c41f3b", Druid: "#ff7d0a", Hunter: "#abd473", Mage: "#69ccf0", Paladin: "#f58cba", Priest: "#ffffff", Rogue: "#fff569", Shaman: "#0070de", Warlock: "#9482c9", Warrior: "#c79c6e" };
     const rows = (list: typeof members) => list.map((member) => `<div class="roster-row"><span class="member-name">${escapeHtml(member.name)}</span><span class="member-class" style="--class-color:${classColors[member.className] ?? "#c5ccd7"}">${escapeHtml(member.className)}</span><span class="member-level">${member.level}</span><span class="member-rank">${escapeHtml(member.rank)}</span><span class="member-points">${member.achievementPoints.toLocaleString()}</span></div>`).join("");
     const midpoint = Math.ceil(members.length / 2);
     const level80 = input.roster.members.filter((member) => member.level === 80).length;
