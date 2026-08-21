@@ -28,6 +28,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Includes an **Open Armory** link and a resilient text-embed fallback.
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
 - Compares Raid-Helper responses with an officer-selected Pizza Core roster and can safely ping only core members who have not responded at all.
+- Privately tracks Pizza Core signup responses week over week for officers without re-opening old Raid-Helper events.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
 - Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
 - Runs without a database, web dashboard, message-content intent, or guild-roster sync.
@@ -40,12 +41,15 @@ Look up a character with one slash command and receive a mobile-readable equipme
 
 ```text
 /ready event:<Raid-Helper message link or event ID> realm:Lordaeron
+/attendance weeks:8
 /raider link name:Lausudo realm:Lordaeron
 /roster guild:"Pizza Warriors" realm:Lordaeron
 /upgrade name:Lausudo realm:Lordaeron spec:Fury
 ```
 
 `/ready` reads the public Raid-Helper event endpoint and checks active signed attendees against Warmane. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Bench, late, tentative, and absent entries are excluded from the readiness total. Officers can also snapshot a directly mentioned core-roster post through **Apps → Set Pizza Core Roster**; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
+
+`/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Every Pizza Core `/ready` run creates or refreshes one snapshot per Raid-Helper event ID. Missing means no signup existed anywhere in that event; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
 
 `/roster` defaults to **Pizza Warriors** on the configured realm. Its Previous and Next controls show ten characters at a time, while **Open Guild Armory** returns to the underlying public roster.
 
@@ -59,7 +63,7 @@ Supported realms are **Lordaeron**, **Icecrown**, and **Blackrock**. The configu
 - Google Chrome (used in headless mode to render the card without opening terminal windows)
 - A Discord application with a bot token and application ID
 
-The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. It does not monitor channel messages or require a Raid-Helper API key. Saving the core roster uses a deliberate message context command restricted to members with **Manage Events**.
+The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. It does not monitor channel messages or require a Raid-Helper API key. Saving the core roster and viewing private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
 
 ## Quick start
 
@@ -136,8 +140,9 @@ CI runs the same checks on Node 24. Review [the release checklist](docs/RELEASE-
 - Secrets, runtime cache, and logs are excluded from Git.
 - Rendered item-icon URLs are limited to HTTPS Warmane hosts.
 - Character and item text is escaped before card rendering.
-- No general Discord message content or player history is stored.
+- No general Discord message content, voice activity, or gameplay attendance is stored.
 - An officer-selected core snapshot stores only source-message identifiers, directly mentioned user IDs/display labels, and reminder timestamps in ignored `data/core-rosters.json`.
+- Private signup history stores per-event Raid-Helper response states for the saved core roster in ignored `data/core-attendance.json`; `/attendance` replies are ephemeral.
 - Optional `/raider link` entries contain only Discord user ID, character name, and realm in `data/raider-links.json`; the file is excluded from Git.
 
 Read the [security policy](SECURITY.md) and the current [security review](docs/SECURITY-REVIEW.md) before hosting or contributing.

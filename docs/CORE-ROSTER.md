@@ -23,6 +23,20 @@ Run `/ready` normally. The card adds a **Core roster responses** section that co
 
 When a core member is completely missing from the event, the Discord post includes an officer-only **Ping missing signups** button. The reminder is a separate Discord message so its user mentions are actionable. Tentative, bench, and absent selections remain visible but are treated as intentional responses.
 
+## Review week-over-week history
+
+Run `/attendance` to receive a private officer report for the latest eight Pizza Core raids, or set `weeks` from 2 through 12. The command is hidden by default from members without **Manage Events**, checks **Manage Events** or **Manage Server** again at runtime, and always responds ephemerally so the result is visible only to the officer who invoked it.
+
+Every Pizza Core `/ready` run creates or refreshes one saved snapshot keyed by the Raid-Helper event ID. Running `/ready` repeatedly for the same event updates that week instead of creating duplicates. `/attendance` also backfills any locally remembered Pizza Core events that do not have a snapshot yet.
+
+The history preserves these meanings:
+
+- **Missing / no signup**: the core member did not appear anywhere in the Raid-Helper event.
+- **Absent, tentative, bench, or late**: the member deliberately selected that response.
+- **Not tracked**: the member was not part of the saved core roster for that historical snapshot.
+
+Raid-Helper signup data cannot prove whether someone who signed actually entered the raid. A true in-game no-show therefore is not inferred or silently mixed into missing-signup totals.
+
 ## Notification safeguards
 
 - Regular `/ready` requests remain silent and never ping members automatically.
@@ -33,4 +47,4 @@ When a core member is completely missing from the event, the Discord post includ
 
 ## Local data
 
-The snapshot is stored only on the bot host in `data/core-rosters.json`. It contains the source message identifiers, the directly mentioned user IDs and display labels, and per-event reminder timestamps. The file is excluded from Git.
+The roster snapshot is stored only on the bot host in `data/core-rosters.json`. It contains the source message identifiers, the directly mentioned user IDs and display labels, and per-event reminder timestamps. Week-over-week response history is stored separately in `data/core-attendance.json`. Both files are excluded from Git.

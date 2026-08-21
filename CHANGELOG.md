@@ -9,6 +9,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 - Officer-invoked Pizza Core roster snapshots from directly mentioned Discord members.
 - `/ready` comparison of core members across signed, late, tentative, bench, absent, and missing states.
 - Targeted reminders only for core members with no event response, with exact user allowlists and duplicate-ping protection.
+- Private officer-only `/attendance` cards with de-duplicated week-over-week Pizza Core signup history.
 
 ### Changed
 
@@ -22,6 +23,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 - Kept the bot on the `Guilds` intent by using a deliberate message context command instead of monitoring channel content.
 - Restricted core-roster configuration and reminders to event/server managers.
+- Restricted attendance history through command visibility, runtime permission checks, ephemeral replies, and an ignored host-local data file.
 
 ## [1.0.0] - 2026-08-09
 

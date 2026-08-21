@@ -22,10 +22,11 @@ import { ArmoryCardRenderer } from "./card.js";
 import { config } from "./config.js";
 import { calculateGearScore } from "./gearscore.js";
 import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
-import { buildReadyReport, getRaidHelperEvent, RaiderLinks, RecentReadyEvents } from "./ready.js";
+import { buildReadyReport, getRaidHelperEvent, isPizzaCoreEventTitle, RaiderLinks, RecentReadyEvents } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
-import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit } from "./core-roster.js";
+import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
+import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
 
 const command = new SlashCommandBuilder()
   .setName("armory")
@@ -57,6 +58,13 @@ const readyCommand = new SlashCommandBuilder()
     { name: "Icecrown", value: "Icecrown" },
     { name: "Blackrock", value: "Blackrock" },
   ));
+
+const attendanceCommand = new SlashCommandBuilder()
+  .setName("attendance")
+  .setDescription("Privately review Pizza Core signup response history")
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents)
+  .setDMPermission(false)
+  .addIntegerOption((option) => option.setName("weeks").setDescription("Number of weekly raids to show (default: 8)").setMinValue(2).setMaxValue(12));
 
 const raiderCommand = new SlashCommandBuilder()
   .setName("raider")
@@ -90,6 +98,7 @@ const cards = new ArmoryCardRenderer();
 const raiderLinks = new RaiderLinks();
 const recentReadyEvents = new RecentReadyEvents();
 const coreRosters = new CoreRosterStore();
+const coreAttendance = new CoreAttendanceStore();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const lookupCooldowns = new Map<string, number>();
 const corePingsInFlight = new Set<string>();
@@ -111,6 +120,48 @@ function rosterButtons(roster: GuildRoster, page: number): ActionRowBuilder<Butt
 
 function canManageCore(memberPermissions: Readonly<PermissionsBitField> | null): boolean {
   return Boolean(memberPermissions?.has(PermissionFlagsBits.ManageEvents) || memberPermissions?.has(PermissionFlagsBits.ManageGuild));
+}
+
+async function recordCoreAttendance(
+  guildId: string,
+  event: { eventId: string; title: string; startsAt?: number },
+  audit: CoreRosterAudit,
+): Promise<void> {
+  if (!isPizzaCoreEventTitle(event.title)) return;
+  try {
+    await coreAttendance.record({
+      guildId,
+      eventId: event.eventId,
+      title: event.title,
+      ...(event.startsAt ? { startsAt: event.startsAt } : {}),
+      audit,
+    });
+  } catch (error) {
+    console.error("Core attendance snapshot failed", error);
+  }
+}
+
+async function backfillKnownCoreAttendance(guildId: string, roster: CoreRosterSnapshot, limit: number): Promise<number> {
+  const knownEvents = (await recentReadyEvents.listCore(guildId)).slice(0, limit);
+  let imported = 0;
+  for (const knownEvent of knownEvents) {
+    if (await coreAttendance.hasEvent(guildId, knownEvent.eventId)) continue;
+    try {
+      const event = await getRaidHelperEvent(knownEvent.eventId);
+      if (!isPizzaCoreEventTitle(event.title)) continue;
+      await coreAttendance.record({
+        guildId,
+        eventId: event.eventId,
+        title: event.title,
+        ...(event.startsAt ? { startsAt: event.startsAt } : {}),
+        audit: auditCoreRoster(roster, event.signups),
+      });
+      imported++;
+    } catch (error) {
+      console.warn(`Could not backfill Pizza Core attendance event ${knownEvent.eventId}.`, error);
+    }
+  }
+  return imported;
 }
 
 function coreRosterButtons(eventId: string, audit?: CoreRosterAudit): ActionRowBuilder<ButtonBuilder>[] {
@@ -142,7 +193,7 @@ async function registerCommand(): Promise<void> {
   const route = config.discordGuildId
     ? Routes.applicationGuildCommands(config.discordClientId, config.discordGuildId)
     : Routes.applicationCommands(config.discordClientId);
-  await rest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON()] });
+  await rest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), attendanceCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON()] });
 }
 
 client.once(Events.ClientReady, () => console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`));
@@ -214,6 +265,7 @@ client.on("interactionCreate", async (interaction) => {
       }
       const event = await getRaidHelperEvent(eventId);
       const audit = auditCoreRoster(roster, event.signups);
+      await recordCoreAttendance(interaction.guildId, event, audit);
       if (!audit.actionable.length) {
         await interaction.editReply("Every saved Pizza Core member has responded to the event. Tentative, bench, and absent selections are respected, so no reminder was sent.");
         return;
@@ -265,6 +317,41 @@ client.on("interactionCreate", async (interaction) => {
     return;
   }
   if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName === "attendance") {
+    if (!interaction.guildId || !canManageCore(interaction.memberPermissions)) {
+      await interaction.reply({ content: "Only members with Manage Events or Manage Server can view Pizza Core signup history.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const roster = await coreRosters.getRoster(interaction.guildId);
+      if (!roster) {
+        await interaction.editReply("No Pizza Core roster is saved. Right-click the officer roster post and use **Apps → Set Pizza Core Roster** first.");
+        return;
+      }
+      const weeks = interaction.options.getInteger("weeks") ?? 8;
+      await backfillKnownCoreAttendance(interaction.guildId, roster, weeks);
+      const history = buildCoreAttendanceHistory(roster, await coreAttendance.list(interaction.guildId, weeks), weeks);
+      if (!history.events.length) {
+        await interaction.editReply("No Pizza Core history has been captured yet. Run **/ready** for the current Pizza Core event; future weekly runs will update this private report automatically.");
+        return;
+      }
+      const cardName = `pizza-core-attendance-${history.events.at(-1)?.eventId ?? "history"}.png`;
+      const card = await cards.renderAttendance({ history });
+      await interaction.editReply({
+        content: "",
+        embeds: [],
+        files: [new AttachmentBuilder(card, {
+          name: cardName,
+          description: "Private Pizza Core signup response history",
+        })],
+      });
+    } catch (error) {
+      console.error("Core attendance report failed", error);
+      await interaction.editReply("I could not build the private signup-history report. The saved history was left unchanged; try again in a moment.");
+    }
+    return;
+  }
   if (interaction.commandName === "raider") {
     if (!interaction.guildId) {
       await interaction.reply({ content: "Use this command inside the PizzaWarriors server so the character link stays private to this guild.", flags: MessageFlags.Ephemeral });
@@ -307,6 +394,13 @@ client.on("interactionCreate", async (interaction) => {
       await recentReadyEvents.rememberCore(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
       const coreRoster = await coreRosters.getRoster(interaction.guildId);
       const coreAudit = coreRoster ? auditCoreRoster(coreRoster, report.signups) : undefined;
+      if (coreAudit) {
+        await recordCoreAttendance(interaction.guildId, {
+          eventId: report.eventId,
+          title: report.eventTitle,
+          ...(report.eventStartsAt ? { startsAt: report.eventStartsAt } : {}),
+        }, coreAudit);
+      }
       const cardName = `raid-ready-${report.eventId}.png`;
       const card = await cards.renderReady({ report, realm, coreRoster: coreAudit });
       const attachment = new AttachmentBuilder(card, {

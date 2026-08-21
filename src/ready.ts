@@ -26,6 +26,7 @@ export type ReadyMember = {
 export type ReadyReport = {
   eventId: string;
   eventTitle: string;
+  eventStartsAt?: number;
   signups: RaidSignup[];
   activeSignups: RaidSignup[];
   members: ReadyMember[];
@@ -45,6 +46,16 @@ function firstText(record: Record<string, unknown>, keys: string[]): string | un
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value.trim();
     if (typeof value === "number") return String(value);
+  }
+  return undefined;
+}
+
+function firstTimestamp(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value) : Number.NaN;
+    if (!Number.isFinite(parsed) || parsed <= 0) continue;
+    return parsed < 10_000_000_000 ? parsed * 1_000 : parsed;
   }
   return undefined;
 }
@@ -158,7 +169,11 @@ function eventIdFromInput(value: string): string | undefined {
   return match?.[0];
 }
 
-export async function getRaidHelperEvent(value: string): Promise<{ eventId: string; title: string; signups: RaidSignup[] }> {
+export function isPizzaCoreEventTitle(title: string): boolean {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, "").includes(CORE_EVENT_KEY);
+}
+
+export async function getRaidHelperEvent(value: string): Promise<{ eventId: string; title: string; startsAt?: number; signups: RaidSignup[] }> {
   const eventId = eventIdFromInput(value);
   if (!eventId) throw new Error("Provide a Raid-Helper event message link or its copied Discord event ID.");
   const response = await fetch(`${RAID_HELPER_API}/${eventId}`, { headers: { accept: "application/json", "user-agent": "PizzaWarriorsArmoryBot/1.0" }, signal: AbortSignal.timeout(15_000) });
@@ -166,7 +181,8 @@ export async function getRaidHelperEvent(value: string): Promise<{ eventId: stri
   const payload: unknown = await response.json();
   if (!isRecord(payload)) throw new Error("Raid-Helper returned an unexpected event response.");
   const title = firstText(payload, ["title", "name", "event_name", "eventName"]) ?? "Raid readiness";
-  return { eventId, title, signups: parseRaidHelperSignups(payload) };
+  const startsAt = firstTimestamp(payload, ["startTime", "start_time", "startsAt", "starts_at"]);
+  return { eventId, title, ...(startsAt ? { startsAt } : {}), signups: parseRaidHelperSignups(payload) };
 }
 
 export class RaiderLinks {
@@ -213,7 +229,7 @@ export class RecentReadyEvents {
   }
 
   private isCoreEvent(event: Pick<RecentReadyEvent, "title">): boolean {
-    return event.title.toLowerCase().replace(/[^a-z0-9]+/g, "").includes(CORE_EVENT_KEY);
+    return isPizzaCoreEventTitle(event.title);
   }
 
   async core(guildId: string): Promise<RecentReadyEvent | undefined> {
@@ -281,6 +297,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
   return {
     eventId: event.eventId,
     eventTitle: event.title,
+    ...(event.startsAt ? { eventStartsAt: event.startsAt } : {}),
     signups: event.signups,
     activeSignups,
     members: results.filter((result): result is Extract<typeof result, { kind: "member" }> => result.kind === "member").map((result) => result.member),

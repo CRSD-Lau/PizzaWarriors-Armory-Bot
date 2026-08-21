@@ -7,5 +7,6 @@ playwright/.cache/
 data/raider-links.json
 data/recent-ready-events.json
 data/core-rosters.json
+data/core-attendance.json
 coverage/
 *.tsbuildinfo

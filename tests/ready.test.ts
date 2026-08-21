@@ -64,6 +64,7 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
   globalThis.fetch = async () => new Response(JSON.stringify({
     id: "1538061412356722709",
     title: "Test raid",
+    startTime: 1_787_364_000,
     signUps: [
       { userId: "123456789012345699", name: "Drancor", cClassName: "Shaman", specName: "Elemental", roleName: "Ranged", status: "primary" },
       { userId: "123456789012345698", name: "BenchCharacter", cClassName: "Bench", specName: "Feral", status: "primary" },
@@ -74,6 +75,7 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
     assert.deepEqual(armoryCalls, [{ name: "Drancor", realm: "Lordaeron" }]);
     assert.equal(report.signups.length, 2);
     assert.equal(report.activeSignups.length, 1);
+    assert.equal(report.eventStartsAt, 1_787_364_000_000);
     assert.equal(report.members[0]?.signup.displayName, "Drancor");
     assert.equal(report.members[0]?.signup.reportedClass, "Shaman");
     assert.equal(report.members[0]?.className, "Shaman");
