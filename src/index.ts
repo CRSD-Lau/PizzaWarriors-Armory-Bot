@@ -309,8 +309,16 @@ client.on("interactionCreate", async (interaction) => {
       const coreAudit = coreRoster ? auditCoreRoster(coreRoster, report.signups) : undefined;
       const cardName = `raid-ready-${report.eventId}.png`;
       const card = await cards.renderReady({ report, realm, coreRoster: coreAudit });
-      const embed = new EmbedBuilder().setColor(0xff8000).setImage(`attachment://${cardName}`);
-      await interaction.editReply({ content: "", embeds: [embed], components: coreRosterButtons(report.eventId, coreAudit), files: [new AttachmentBuilder(card, { name: cardName })] });
+      const attachment = new AttachmentBuilder(card, {
+        name: cardName,
+        description: `${report.eventTitle} raid-readiness card`,
+      });
+      await interaction.editReply({
+        content: "",
+        embeds: [],
+        components: coreRosterButtons(report.eventId, coreAudit),
+        files: [attachment],
+      });
     } catch (error) {
       console.error("Raid readiness lookup failed", error);
       await interaction.editReply("I could not read that Raid-Helper event. Paste the event's Discord message link or copied event ID, then try again.");
