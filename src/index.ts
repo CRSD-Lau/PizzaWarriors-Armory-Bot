@@ -177,14 +177,19 @@ function coreRosterButtons(eventId: string, audit?: CoreRosterAudit): ActionRowB
   return [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)];
 }
 
-async function rosterMessage(roster: GuildRoster, page: number): Promise<{ embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files: AttachmentBuilder[] }> {
+async function rosterMessage(roster: GuildRoster, page: number) {
   const boundedPage = Math.min(Math.max(page, 0), Math.max(0, Math.ceil(roster.members.length / ROSTER_PAGE_SIZE) - 1));
   const cardName = `guild-roster-${boundedPage + 1}.png`;
   const card = await cards.renderRoster({ roster, page: boundedPage, pageSize: ROSTER_PAGE_SIZE });
   return {
-    embeds: [new EmbedBuilder().setColor(0xff8000).setImage(`attachment://${cardName}`)],
+    content: "",
+    embeds: [],
+    attachments: [],
     components: [rosterButtons(roster, boundedPage)],
-    files: [new AttachmentBuilder(card, { name: cardName })],
+    files: [new AttachmentBuilder(card, {
+      name: cardName,
+      description: `${roster.guildName} roster page ${boundedPage + 1}`,
+    })],
   };
 }
 
@@ -454,8 +459,11 @@ client.on("interactionCreate", async (interaction) => {
         new ButtonBuilder().setLabel("Open Best-in-Slot Sheet").setStyle(ButtonStyle.Link).setURL(profile.sources[0].url),
       );
       const card = await cards.renderUpgrade({ name, realm, className: character.className, specName, profile, items: character.items, portrait: character.portrait });
-      const embed = new EmbedBuilder().setColor(0xff8000).setImage(`attachment://${fileName}`);
-      await interaction.editReply({ embeds: [embed], components: [buttons], files: [new AttachmentBuilder(card, { name: fileName })] });
+      const attachment = new AttachmentBuilder(card, {
+        name: fileName,
+        description: `${name} ${specName} upgrade card`,
+      });
+      await interaction.editReply({ content: "", embeds: [], attachments: [], components: [buttons], files: [attachment] });
     } catch (error) {
       console.error("Upgrade preview lookup failed", error);
       await interaction.editReply("I couldn't read that character's profile right now. Check the character name and realm, then try again in a moment.");
@@ -490,8 +498,11 @@ client.on("interactionCreate", async (interaction) => {
     );
     try {
       const card = await cards.render({ name, realm, items: character.items, summary, portrait: character.portrait });
-      const embed = new EmbedBuilder().setColor(tier.color).setImage(`attachment://${cardName}`);
-      await interaction.editReply({ embeds: [embed], components: [buttons], files: [new AttachmentBuilder(card, { name: cardName })] });
+      const attachment = new AttachmentBuilder(card, {
+        name: cardName,
+        description: `${name} armory card`,
+      });
+      await interaction.editReply({ content: "", embeds: [], attachments: [], components: [buttons], files: [attachment] });
     } catch (cardError) {
       // The raw armory data remains useful if a browser/image host is temporarily unavailable.
       console.error("Armory card render failed; using text fallback", cardError);

@@ -14,10 +14,12 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 ### Changed
 
 - Consolidated Windows boot recovery into one silent, single-instance Task Scheduler process and disabled the obsolete PM2 recovery launchers.
+- Standardized every generated card at 3× device resolution for clearer Discord previews and full-size viewing.
 
 ### Fixed
 
 - Made `/ready` class colors follow Raid-Helper's selected class instead of a conflicting Armory character class.
+- Sent `/armory`, `/upgrade`, and `/roster` cards as direct image attachments instead of nesting them inside Discord image embeds.
 
 ### Security
 

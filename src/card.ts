@@ -14,6 +14,7 @@ import { gearScoreTier, itemGearScoreTier } from "./score-tiers.js";
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LOGO_FILE = join(ROOT, "assets", "pizzawarriors-armory-discord-icon-1024.png");
 const LEGENDARY = "#ff8000";
+const CARD_DEVICE_SCALE_FACTOR = 3;
 const RAID_READY_GEAR_SCORE = 5_800;
 const RAID_SIZE = 25;
 const ROLE_TARGETS: ReadonlyArray<{ role: RaidRole; label: string; target: number }> = [
@@ -162,9 +163,9 @@ export class ArmoryCardRenderer {
     return this.withBrowser(async (browser) => {
     const logo = await this.getLogo();
     const tier = gearScoreTier(input.summary.score);
-    // Discord downscales attachment previews. Render at 2x so the character
+    // Discord downscales attachment previews. Render at 3x so the character
     // thumbnail, item icons, and type remain crisp in the message preview.
-    const context = await browser.newContext({ viewport: { width: 920, height: 1_400 }, deviceScaleFactor: 2 });
+    const context = await browser.newContext({ viewport: { width: 920, height: 1_400 }, deviceScaleFactor: CARD_DEVICE_SCALE_FACTOR });
     const page = await context.newPage();
     const portrait = input.portrait ? dataUrl(input.portrait, "image/png") : undefined;
     // A tall one-column card is height-capped and aggressively shrunk by Discord.
@@ -211,7 +212,7 @@ export class ArmoryCardRenderer {
   async renderUpgrade(input: { name: string; realm: string; className: string; specName: string; profile: UpgradeProfile; items: GearItem[]; portrait?: Buffer }): Promise<Buffer> {
     return this.withBrowser(async (browser) => {
     const logo = await this.getLogo();
-    const context = await browser.newContext({ viewport: { width: 920, height: 1_400 }, deviceScaleFactor: 2 });
+    const context = await browser.newContext({ viewport: { width: 920, height: 1_400 }, deviceScaleFactor: CARD_DEVICE_SCALE_FACTOR });
     const page = await context.newPage();
     const portrait = input.portrait ? dataUrl(input.portrait, "image/png") : undefined;
     const targets = input.profile.targets ?? [];
@@ -238,7 +239,7 @@ export class ArmoryCardRenderer {
   async renderReady(input: { report: ReadyReport; realm: string; coreRoster?: CoreRosterAudit }): Promise<Buffer> {
     return this.withBrowser(async (browser) => {
       const logo = await this.getLogo();
-      const context = await browser.newContext({ viewport: { width: 920, height: 1_600 }, deviceScaleFactor: 3 });
+      const context = await browser.newContext({ viewport: { width: 920, height: 1_600 }, deviceScaleFactor: CARD_DEVICE_SCALE_FACTOR });
       const page = await context.newPage();
       const members = [...input.report.members].sort((a, b) => b.summary.score - a.summary.score);
       const attendance = (status: "Signed" | "Late" | "Tentative" | "Bench" | "Absent") => input.report.signups.filter((signup) => signup.status === status);
@@ -311,7 +312,7 @@ export class ArmoryCardRenderer {
       const logo = await this.getLogo();
       const { history } = input;
       const cardWidth = Math.max(872, 340 + history.events.length * 62);
-      const context = await browser.newContext({ viewport: { width: cardWidth + 48, height: 1_600 }, deviceScaleFactor: 2 });
+      const context = await browser.newContext({ viewport: { width: cardWidth + 48, height: 1_600 }, deviceScaleFactor: CARD_DEVICE_SCALE_FACTOR });
       const page = await context.newPage();
       const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Halifax" });
       const gridColumns = `minmax(170px,1fr) repeat(${history.events.length},58px) 52px 52px`;
@@ -349,7 +350,7 @@ export class ArmoryCardRenderer {
     const totalPages = Math.max(1, Math.ceil(input.roster.members.length / pageSize));
     const pageIndex = Math.min(Math.max(input.page, 0), totalPages - 1);
     const members = input.roster.members.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
-    const context = await browser.newContext({ viewport: { width: 920, height: 1_100 }, deviceScaleFactor: 2 });
+    const context = await browser.newContext({ viewport: { width: 920, height: 1_100 }, deviceScaleFactor: CARD_DEVICE_SCALE_FACTOR });
     const page = await context.newPage();
     const rows = (list: typeof members) => list.map((member) => `<div class="roster-row"><span class="member-name">${escapeHtml(member.name)}</span><span class="member-class" style="--class-color:${classColors[member.className] ?? "#c5ccd7"}">${escapeHtml(member.className)}</span><span class="member-level">${member.level}</span><span class="member-rank">${escapeHtml(member.rank)}</span><span class="member-points">${member.achievementPoints.toLocaleString()}</span></div>`).join("");
     const midpoint = Math.ceil(members.length / 2);
