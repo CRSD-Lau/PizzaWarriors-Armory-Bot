@@ -1,12 +1,6 @@
 Option Explicit
 
-' Run PM2 recovery without showing a Command Prompt or PowerShell window.
-Dim shell
-Set shell = CreateObject("WScript.Shell")
-
-shell.Environment("Process")("PM2_HOME") = "C:\Users\neil_\.pm2"
-shell.Environment("Process")("PATH") = "C:\Program Files\nodejs;C:\Users\neil_\AppData\Roaming\npm;" & shell.Environment("Process")("PATH")
-' Call Node directly. The recovery helper leaves an already-online bot alone
-' and restores PM2's saved process list only when it is missing. Wait for it
-' so Task Scheduler records a real failure instead of a false success.
-WScript.Quit shell.Run("""C:\Program Files\nodejs\node.exe"" ""D:\Wow Addons\PizzaWarriors-Armory-Bot\scripts\pm2-recover.js""", 0, True)
+' Legacy PM2 launcher intentionally disabled. The production bot now runs as
+' one persistent Task Scheduler-owned Node process. Keeping this no-op file
+' makes any not-yet-removed legacy task harmless instead of spawning PM2.
+WScript.Quit 0

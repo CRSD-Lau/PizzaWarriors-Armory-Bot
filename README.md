@@ -85,14 +85,18 @@ See [`.env.example`](.env.example) for the complete configuration reference. Nev
 
 ## Production operation
 
-The project includes a PM2 ecosystem file and quiet Windows recovery scripts.
+Production uses one persistent Windows Task Scheduler process. Run the installer
+once from Administrator PowerShell; it removes the obsolete PM2 watchdog and
+logon tasks, registers a single S4U boot task, and prevents parallel instances.
 
 ```powershell
-pm2 start ecosystem.config.cjs
-pm2 save
-pm2 status pizza-warriors-armory
+.\scripts\install-boot-recovery.ps1 -StartNow
+Get-ScheduledTask -TaskName "PizzaWarriors Armory Bot"
 Invoke-RestMethod http://127.0.0.1:3000/healthz
 ```
+
+Do not combine this task with a PM2 boot, logon, or repeating watchdog task.
+The PM2 ecosystem file remains available only for deliberate interactive use.
 
 - `GET /healthz` returns `{ "ok": true }` for health probes.
 - Item metadata is cached locally for 30 days in `.cache/items.json` to reduce upstream requests.

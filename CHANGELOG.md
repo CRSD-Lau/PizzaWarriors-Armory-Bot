@@ -10,6 +10,10 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 - `/ready` comparison of core members across signed, late, tentative, bench, absent, and missing states.
 - Targeted reminders only for core members with no event response, with exact user allowlists and duplicate-ping protection.
 
+### Changed
+
+- Consolidated Windows boot recovery into one silent, single-instance Task Scheduler process and disabled the obsolete PM2 recovery launchers.
+
 ### Security
 
 - Kept the bot on the `Guilds` intent by using a deliberate message context command instead of monitoring channel content.

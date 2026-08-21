@@ -21,8 +21,8 @@ Use this before publishing a version or changing the bot in production.
 ## Operations
 
 - [ ] `GET /healthz` returns `{ "ok": true }` after deployment.
-- [ ] PM2 shows `pizza-warriors-armory` as `online`.
-- [ ] Boot and logon recovery tasks are present and use the hidden launcher.
+- [ ] The `PizzaWarriors Armory Bot` task is running the direct Node action and `/healthz` reports Discord ready.
+- [ ] The obsolete logon-recovery and five-minute watchdog tasks are absent.
 - [ ] The current version and user-facing changes are recorded in `CHANGELOG.md`.
 
 ## GitHub
