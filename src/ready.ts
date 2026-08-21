@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { auditGearPreparation, type GearPreparationAudit } from "./gear-audit.js";
 import { calculateGearScore, type GearScoreSummary } from "./gearscore.js";
 import { WarmaneArmory, type ArmoryCharacter } from "./armory.js";
 
@@ -19,6 +20,7 @@ export type ReadyMember = {
   className?: string;
   specName?: string;
   summary: GearScoreSummary;
+  preparation: GearPreparationAudit;
   armoryUrl: string;
 };
 export type ReadyReport = {
@@ -252,7 +254,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
       }
       const summary = calculateGearScore(character.items);
       if (!summary) throw new Error("insufficient equipped-item data");
-      return { kind: "member" as const, member: { signup, characterName, className: character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, armoryUrl: character.armoryUrl } };
+      return { kind: "member" as const, member: { signup, characterName, className: character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, preparation: character.gearAudit ?? auditGearPreparation(character.items), armoryUrl: character.armoryUrl } };
     } catch (error) {
       return { kind: "unresolved" as const, unresolved: { signup, reason: error instanceof Error ? error.message : "armory lookup failed" } };
     }

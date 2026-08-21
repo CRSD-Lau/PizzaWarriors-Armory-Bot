@@ -20,6 +20,10 @@ export type GearItem = {
   quality: string;
   equipLoc?: GearScoreEquipLoc;
   iconUrl?: string;
+  enchantId?: number;
+  gemIds?: number[];
+  socketCount?: number;
+  auditDataAvailable?: boolean;
 };
 
 const SCALE = 1.8618;

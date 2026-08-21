@@ -21,7 +21,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tests/gearscore.test.ts && tsx tests/score-tiers.test.ts && tsx tests/browser-recovery.test.ts && tsx tests/upgrade.test.ts && tsx tests/sheet-upgrades.test.ts && tsx tests/ready.test.ts && tsx tests/guild.test.ts"
+    "test": "tsx tests/gearscore.test.ts && tsx tests/score-tiers.test.ts && tsx tests/gear-audit.test.ts && tsx tests/browser-recovery.test.ts && tsx tests/upgrade.test.ts && tsx tests/sheet-upgrades.test.ts && tsx tests/ready.test.ts && tsx tests/guild.test.ts"
   },
   "dependencies": {
     "discord.js": "^14.24.2",
