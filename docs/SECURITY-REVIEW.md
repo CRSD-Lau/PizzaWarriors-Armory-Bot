@@ -12,7 +12,7 @@ No known production dependency vulnerabilities were reported by `npm audit --omi
 | Area | Control |
 | --- | --- |
 | Discord access | Slash commands plus an officer-invoked message context command; `Guilds` intent only and no broad Message Content access. |
-| Core reminders | Manage Events/Manage Server gate, exact user-ID allowlist, no role/everyone mentions, and a 30-minute unchanged-state cooldown. |
+| Core reminders | Missing-signup-only targeting, Manage Events/Manage Server gate, exact user-ID allowlist, no role/everyone mentions, and a 30-minute unchanged-state cooldown. |
 | Local roster data | Only the selected message identifiers, mentioned core user IDs/display labels, and reminder timestamps are retained in an ignored local file. |
 | Credentials | `.env` and runtime cache are ignored; documented rotation and reporting path. |
 | Untrusted armory data | Item text is HTML-escaped before card rendering. |

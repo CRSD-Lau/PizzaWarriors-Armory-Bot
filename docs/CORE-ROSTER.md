@@ -21,7 +21,7 @@ Run `/ready` normally. The card adds a **Core roster responses** section that co
 - Absent players.
 - Core members who do not appear in the event at all, shown as missing.
 
-When anyone is missing, tentative, or absent, the Discord post includes an officer-only **Ping outstanding core** button. The reminder is a separate Discord message so its user mentions are actionable.
+When a core member is completely missing from the event, the Discord post includes an officer-only **Ping missing signups** button. The reminder is a separate Discord message so its user mentions are actionable. Tentative, bench, and absent selections remain visible but are treated as intentional responses.
 
 ## Notification safeguards
 
@@ -29,7 +29,7 @@ When anyone is missing, tentative, or absent, the Discord post includes an offic
 - Only members with **Manage Events** or **Manage Server** can send the reminder.
 - Discord is given an explicit allowlist containing only the affected user IDs; role, `@here`, and `@everyone` mentions are never enabled.
 - An unchanged reminder cannot be sent again for 30 minutes. A changed signup state creates a new reminder fingerprint immediately.
-- Bench members are visible in the comparison but are not included in the reminder.
+- Tentative, bench, and absent members are visible in the comparison but are never included in the reminder.
 
 ## Local data
 

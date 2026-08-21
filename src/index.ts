@@ -119,7 +119,7 @@ function coreRosterButtons(eventId: string, audit?: CoreRosterAudit): ActionRowB
   if (audit.actionable.length) {
     buttons.push(new ButtonBuilder()
       .setCustomId(`core-ping:${eventId}`)
-      .setLabel(`Ping ${audit.actionable.length} outstanding core`)
+      .setLabel(`Ping ${audit.actionable.length} missing signup${audit.actionable.length === 1 ? "" : "s"}`)
       .setStyle(ButtonStyle.Primary));
   }
   buttons.push(new ButtonBuilder().setLabel("Open Core Roster").setStyle(ButtonStyle.Link).setURL(audit.roster.sourceUrl));
@@ -215,7 +215,7 @@ client.on("interactionCreate", async (interaction) => {
       const event = await getRaidHelperEvent(eventId);
       const audit = auditCoreRoster(roster, event.signups);
       if (!audit.actionable.length) {
-        await interaction.editReply("Everyone on the saved Pizza Core roster is now signed or otherwise accounted for. No reminder was sent.");
+        await interaction.editReply("Every saved Pizza Core member has responded to the event. Tentative, bench, and absent selections are respected, so no reminder was sent.");
         return;
       }
       const recentPing = await coreRosters.recentMatchingPing(interaction.guildId, eventId, audit.fingerprint);
@@ -238,7 +238,7 @@ client.on("interactionCreate", async (interaction) => {
         const userIds = audit.actionable.map((entry) => entry.discordUserId);
         await interaction.channel.send({ content: coreReminderText(audit), allowedMentions: { users: userIds } });
         await coreRosters.recordPing(interaction.guildId, eventId, audit.fingerprint);
-        await interaction.editReply(`Pinged **${userIds.length}** core member${userIds.length === 1 ? "" : "s"} who are missing, tentative, or absent.`);
+        await interaction.editReply(`Pinged **${userIds.length}** core member${userIds.length === 1 ? "" : "s"} who have not responded to the event at all.`);
       } finally {
         corePingsInFlight.delete(inFlightKey);
       }

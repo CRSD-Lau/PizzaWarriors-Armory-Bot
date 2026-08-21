@@ -27,7 +27,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Generates a branded PizzaWarriors equipment card with legendary orange GearScore and blue iLvl hierarchy.
 - Includes an **Open Armory** link and a resilient text-embed fallback.
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
-- Compares Raid-Helper responses with an officer-selected Pizza Core roster and can safely ping only missing, tentative, or absent core members.
+- Compares Raid-Helper responses with an officer-selected Pizza Core roster and can safely ping only core members who have not responded at all.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
 - Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
 - Runs without a database, web dashboard, message-content intent, or guild-roster sync.

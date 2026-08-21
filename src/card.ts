@@ -237,7 +237,7 @@ export class ArmoryCardRenderer {
   async renderReady(input: { report: ReadyReport; realm: string; coreRoster?: CoreRosterAudit }): Promise<Buffer> {
     return this.withBrowser(async (browser) => {
       const logo = await this.getLogo();
-      const context = await browser.newContext({ viewport: { width: 920, height: 1_600 }, deviceScaleFactor: 2 });
+      const context = await browser.newContext({ viewport: { width: 920, height: 1_600 }, deviceScaleFactor: 3 });
       const page = await context.newPage();
       const members = [...input.report.members].sort((a, b) => b.summary.score - a.summary.score);
       const attendance = (status: "Signed" | "Late" | "Tentative" | "Bench" | "Absent") => input.report.signups.filter((signup) => signup.status === status);
@@ -280,7 +280,7 @@ export class ArmoryCardRenderer {
       const coreActionRow = (label: string, entries: readonly CoreRosterAuditEntry[], tone: string) => entries.length
         ? `<div class="core-action-row"><b class="${tone}">${label} · ${entries.length}</b><span>${coreNames(entries)}</span></div>`
         : "";
-      const coreSummary = input.coreRoster ? `<section class="core-check"><div class="core-check-head"><div><span>Core roster responses</span><b>${input.coreRoster.respondedCount}/${input.coreRoster.entries.length}</b></div><strong class="${input.coreRoster.actionable.length ? "attention" : "complete"}">${input.coreRoster.actionable.length ? `${input.coreRoster.actionable.length} need action` : "All responded"}</strong></div><div class="core-counts"><span class="active">Active <b>${input.coreRoster.signed.length + input.coreRoster.late.length}</b></span><span>Tentative <b>${input.coreRoster.tentative.length}</b></span><span>Bench <b>${input.coreRoster.bench.length}</b></span><span>Absent <b>${input.coreRoster.absent.length}</b></span><span>Missing <b>${input.coreRoster.missing.length}</b></span></div><div class="core-actions">${coreActionRow("Not signed up", input.coreRoster.missing, "missing")}${coreActionRow("Tentative", input.coreRoster.tentative, "tentative")}${coreActionRow("Absent", input.coreRoster.absent, "absent")}</div></section>` : "";
+      const coreSummary = input.coreRoster ? `<section class="core-check"><div class="core-check-head"><div><span>Core roster responses</span><b>${input.coreRoster.respondedCount}/${input.coreRoster.entries.length}</b></div><strong class="${input.coreRoster.actionable.length ? "attention" : "complete"}">${input.coreRoster.actionable.length ? `${input.coreRoster.actionable.length} need signup` : "All responded"}</strong></div><div class="core-counts"><span class="active">Active <b>${input.coreRoster.signed.length + input.coreRoster.late.length}</b></span><span>Tentative <b>${input.coreRoster.tentative.length}</b></span><span>Bench <b>${input.coreRoster.bench.length}</b></span><span>Absent <b>${input.coreRoster.absent.length}</b></span><span>Missing <b>${input.coreRoster.missing.length}</b></span></div><div class="core-actions">${coreActionRow("Not signed up", input.coreRoster.missing, "missing")}</div></section>` : "";
       const statusNames = (status: "Late" | "Tentative" | "Bench" | "Absent") => {
         const people = attendance(status);
         if (!people.length) return "";

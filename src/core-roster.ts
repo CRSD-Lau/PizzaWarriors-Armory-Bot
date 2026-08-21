@@ -113,7 +113,9 @@ export function auditCoreRoster(roster: CoreRosterSnapshot, signups: readonly Ra
   const bench = entriesForStatus(entries, "Bench");
   const absent = entriesForStatus(entries, "Absent");
   const missing = entriesForStatus(entries, "Missing");
-  const actionable = [...missing, ...tentative, ...absent];
+  // Tentative, bench, and absent are deliberate responses. Only members who
+  // do not appear anywhere in the event should receive a signup reminder.
+  const actionable = [...missing];
   const fingerprint = actionable
     .map((entry) => `${entry.discordUserId}:${entry.status}`)
     .sort()
@@ -140,8 +142,6 @@ export function coreReminderText(audit: CoreRosterAudit): string {
     if (entries.length) lines.push(`**${label}:** ${entries.map((entry) => `<@${entry.discordUserId}>`).join(" ")}`);
   };
   add("Not signed up", audit.missing);
-  add("Tentative", audit.tentative);
-  add("Absent", audit.absent);
   return lines.join("\n");
 }
 

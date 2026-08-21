@@ -46,13 +46,11 @@ assert.equal(audit.absent.length, 1);
 assert.equal(audit.missing.length, 1);
 assert.deepEqual(audit.actionable.map((entry) => [entry.discordUserId, entry.status]), [
   ["123456789012345606", "Missing"],
-  ["123456789012345603", "Tentative"],
-  ["123456789012345605", "Absent"],
 ]);
 assert.match(coreReminderText(audit), /Not signed up.*<@123456789012345606>/);
-assert.match(coreReminderText(audit), /Tentative.*<@123456789012345603>/);
-assert.match(coreReminderText(audit), /Absent.*<@123456789012345605>/);
+assert.doesNotMatch(coreReminderText(audit), /123456789012345603/);
 assert.doesNotMatch(coreReminderText(audit), /123456789012345604/);
+assert.doesNotMatch(coreReminderText(audit), /123456789012345605/);
 
 async function verifyPersistenceAndCooldown(): Promise<void> {
   const directory = await mkdtemp(join(tmpdir(), "pizzawarriors-core-roster-"));

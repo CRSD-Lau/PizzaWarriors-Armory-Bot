@@ -8,7 +8,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 - Officer-invoked Pizza Core roster snapshots from directly mentioned Discord members.
 - `/ready` comparison of core members across signed, late, tentative, bench, absent, and missing states.
-- Targeted missing/tentative/absent reminders with exact user allowlists and duplicate-ping protection.
+- Targeted reminders only for core members with no event response, with exact user allowlists and duplicate-ping protection.
 
 ### Security
 
