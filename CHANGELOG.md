@@ -14,6 +14,10 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 - Consolidated Windows boot recovery into one silent, single-instance Task Scheduler process and disabled the obsolete PM2 recovery launchers.
 
+### Fixed
+
+- Made `/ready` class colors follow Raid-Helper's selected class instead of a conflicting Armory character class.
+
 ### Security
 
 - Kept the bot on the `Guilds` intent by using a deliberate message context command instead of monitoring channel content.

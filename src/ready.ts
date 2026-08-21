@@ -12,7 +12,7 @@ const CORE_EVENT_KEY = "pizzacoreicc25";
 export type RaiderLink = { name: string; realm: string };
 export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
 export type RaidRole = "Tanks" | "Healers" | "Melee" | "Ranged";
-export type RaidSignup = { discordUserId: string; displayName: string; reportedSpec?: string; reportedRole?: RaidRole; status: RaidAttendance };
+export type RaidSignup = { discordUserId: string; displayName: string; reportedClass?: string; reportedSpec?: string; reportedRole?: RaidRole; status: RaidAttendance };
 export type ReadyMember = {
   signup: RaidSignup;
   /** The character name resolved in Armory; the card always presents the event signup name. */
@@ -47,6 +47,24 @@ function firstText(record: Record<string, unknown>, keys: string[]): string | un
     if (typeof value === "number") return String(value);
   }
   return undefined;
+}
+
+const characterClasses: Record<string, string> = {
+  deathknight: "Death Knight",
+  druid: "Druid",
+  hunter: "Hunter",
+  mage: "Mage",
+  paladin: "Paladin",
+  priest: "Priest",
+  rogue: "Rogue",
+  shaman: "Shaman",
+  warlock: "Warlock",
+  warrior: "Warrior",
+};
+
+function characterClassForValue(value?: string): string | undefined {
+  if (!value) return undefined;
+  return characterClasses[value.toLowerCase().replace(/[^a-z]/g, "")];
 }
 
 function attendanceForValue(value?: string): RaidAttendance | undefined {
@@ -124,9 +142,10 @@ export function parseRaidHelperSignups(payload: unknown): RaidSignup[] {
       ?? (objectKey && /^\d{16,22}$/.test(objectKey) ? objectKey : undefined);
     const displayName = firstText(value, ["name", "display_name", "displayName", "nickname", "username", "character", "character_name"]);
     if (discordUserId && displayName) {
+      const reportedClass = characterClassForValue(firstText(value, ["cClassName", "className"]));
       const reportedSpec = extractSpec(value);
       const reportedRole = extractRole(value, reportedSpec);
-      found.set(discordUserId, { discordUserId, displayName, ...(reportedSpec ? { reportedSpec } : {}), ...(reportedRole ? { reportedRole } : {}), status });
+      found.set(discordUserId, { discordUserId, displayName, ...(reportedClass ? { reportedClass } : {}), ...(reportedSpec ? { reportedSpec } : {}), ...(reportedRole ? { reportedRole } : {}), status });
     }
     for (const [key, child] of Object.entries(value)) walk(child, statusForKey(key) ?? status, key);
   };
@@ -254,7 +273,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
       }
       const summary = calculateGearScore(character.items);
       if (!summary) throw new Error("insufficient equipped-item data");
-      return { kind: "member" as const, member: { signup, characterName, className: character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, preparation: character.gearAudit ?? auditGearPreparation(character.items), armoryUrl: character.armoryUrl } };
+      return { kind: "member" as const, member: { signup, characterName, className: signup.reportedClass ?? character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, preparation: character.gearAudit ?? auditGearPreparation(character.items), armoryUrl: character.armoryUrl } };
     } catch (error) {
       return { kind: "unresolved" as const, unresolved: { signup, reason: error instanceof Error ? error.message : "armory lookup failed" } };
     }

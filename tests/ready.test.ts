@@ -38,7 +38,7 @@ const v4Signups = parseRaidHelperSignups({
 });
 
 assert.deepEqual(v4Signups, [
-  { discordUserId: "123456789012345690", displayName: "Activepal", reportedSpec: "Retribution", reportedRole: "Melee", status: "Signed" },
+  { discordUserId: "123456789012345690", displayName: "Activepal", reportedClass: "Paladin", reportedSpec: "Retribution", reportedRole: "Melee", status: "Signed" },
   { discordUserId: "123456789012345691", displayName: "Benchdruid", reportedSpec: "Feral", reportedRole: "Melee", status: "Bench" },
   { discordUserId: "123456789012345692", displayName: "Awayrogue", status: "Absent" },
 ]);
@@ -51,8 +51,8 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
       armoryCalls.push({ name, realm });
       return {
         armoryUrl: "https://armory.warmane.com/example",
-        className: "Paladin",
-        primarySpec: "Protection", // Must never replace the event's selection.
+        className: "Warlock", // Must never replace Raid-Helper's selected class.
+        primarySpec: "Affliction", // Must never replace the event's selected spec.
         items: [{ id: 1, slot: "Head", name: "Test helm", itemLevel: 264, quality: "epic", equipLoc: "INVTYPE_HEAD" as const }],
       };
     },
@@ -65,18 +65,20 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
     id: "1538061412356722709",
     title: "Test raid",
     signUps: [
-      { userId: "123456789012345699", name: "EventCharacter", cClassName: "Paladin", specName: "Retribution", roleName: "Melee", status: "primary" },
+      { userId: "123456789012345699", name: "Drancor", cClassName: "Shaman", specName: "Elemental", roleName: "Ranged", status: "primary" },
       { userId: "123456789012345698", name: "BenchCharacter", cClassName: "Bench", specName: "Feral", status: "primary" },
     ],
   }), { status: 200, headers: { "content-type": "application/json" } });
   try {
     const report = await buildReadyReport({ event: "1538061412356722709", realm: "Lordaeron", guildId: "guild", armory, links });
-    assert.deepEqual(armoryCalls, [{ name: "EventCharacter", realm: "Lordaeron" }]);
+    assert.deepEqual(armoryCalls, [{ name: "Drancor", realm: "Lordaeron" }]);
     assert.equal(report.signups.length, 2);
     assert.equal(report.activeSignups.length, 1);
-    assert.equal(report.members[0]?.signup.displayName, "EventCharacter");
-    assert.equal(report.members[0]?.specName, "Retribution");
-    assert.equal(report.members[0]?.signup.reportedRole, "Melee");
+    assert.equal(report.members[0]?.signup.displayName, "Drancor");
+    assert.equal(report.members[0]?.signup.reportedClass, "Shaman");
+    assert.equal(report.members[0]?.className, "Shaman");
+    assert.equal(report.members[0]?.specName, "Elemental");
+    assert.equal(report.members[0]?.signup.reportedRole, "Ranged");
     assert.equal(report.signups[1]?.status, "Bench");
   } finally {
     globalThis.fetch = originalFetch;
