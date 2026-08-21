@@ -1,14 +1,18 @@
 import { createServer } from "node:http";
 import {
   ActionRowBuilder,
+  ApplicationCommandType,
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
   Client,
+  ContextMenuCommandBuilder,
   EmbedBuilder,
   Events,
   GatewayIntentBits,
   MessageFlags,
+  PermissionFlagsBits,
+  type PermissionsBitField,
   REST,
   Routes,
   SlashCommandBuilder,
@@ -18,9 +22,10 @@ import { ArmoryCardRenderer } from "./card.js";
 import { config } from "./config.js";
 import { calculateGearScore } from "./gearscore.js";
 import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
-import { buildReadyReport, RaiderLinks, RecentReadyEvents } from "./ready.js";
+import { buildReadyReport, getRaidHelperEvent, RaiderLinks, RecentReadyEvents } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
+import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit } from "./core-roster.js";
 
 const command = new SlashCommandBuilder()
   .setName("armory")
@@ -75,12 +80,19 @@ const rosterCommand = new SlashCommandBuilder()
     { name: "Blackrock", value: "Blackrock" },
   ));
 
+const coreRosterCommand = new ContextMenuCommandBuilder()
+  .setName("Set Pizza Core Roster")
+  .setType(ApplicationCommandType.Message)
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents);
+
 const armory = new WarmaneArmory();
 const cards = new ArmoryCardRenderer();
 const raiderLinks = new RaiderLinks();
 const recentReadyEvents = new RecentReadyEvents();
+const coreRosters = new CoreRosterStore();
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const lookupCooldowns = new Map<string, number>();
+const corePingsInFlight = new Set<string>();
 const LOOKUP_COOLDOWN_MS = 10_000;
 const ROSTER_PAGE_SIZE = 10;
 
@@ -95,6 +107,23 @@ function rosterButtons(roster: GuildRoster, page: number): ActionRowBuilder<Butt
     new ButtonBuilder().setLabel("Open Guild Armory").setStyle(ButtonStyle.Link).setURL(roster.armoryUrl),
     new ButtonBuilder().setCustomId(rosterButtonId(Math.min(totalPages - 1, page + 1), roster.realm, roster.guildName)).setLabel("Next").setStyle(ButtonStyle.Secondary).setDisabled(page >= totalPages - 1),
   );
+}
+
+function canManageCore(memberPermissions: Readonly<PermissionsBitField> | null): boolean {
+  return Boolean(memberPermissions?.has(PermissionFlagsBits.ManageEvents) || memberPermissions?.has(PermissionFlagsBits.ManageGuild));
+}
+
+function coreRosterButtons(eventId: string, audit?: CoreRosterAudit): ActionRowBuilder<ButtonBuilder>[] {
+  if (!audit) return [];
+  const buttons: ButtonBuilder[] = [];
+  if (audit.actionable.length) {
+    buttons.push(new ButtonBuilder()
+      .setCustomId(`core-ping:${eventId}`)
+      .setLabel(`Ping ${audit.actionable.length} outstanding core`)
+      .setStyle(ButtonStyle.Primary));
+  }
+  buttons.push(new ButtonBuilder().setLabel("Open Core Roster").setStyle(ButtonStyle.Link).setURL(audit.roster.sourceUrl));
+  return [new ActionRowBuilder<ButtonBuilder>().addComponents(buttons)];
 }
 
 async function rosterMessage(roster: GuildRoster, page: number): Promise<{ embeds: EmbedBuilder[]; components: ActionRowBuilder<ButtonBuilder>[]; files: AttachmentBuilder[] }> {
@@ -113,7 +142,7 @@ async function registerCommand(): Promise<void> {
   const route = config.discordGuildId
     ? Routes.applicationGuildCommands(config.discordClientId, config.discordGuildId)
     : Routes.applicationCommands(config.discordClientId);
-  await rest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON()] });
+  await rest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON()] });
 }
 
 client.once(Events.ClientReady, () => console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`));
@@ -129,6 +158,93 @@ client.on("interactionCreate", async (interaction) => {
         .filter((event) => `${event.title} ${event.eventId}`.toLowerCase().includes(query))
         .slice(0, 25);
       await interaction.respond(events.map((event) => ({ name: `${event.title} · ${event.eventId}`, value: event.eventId })));
+    }
+    return;
+  }
+  if (interaction.isMessageContextMenuCommand() && interaction.commandName === "Set Pizza Core Roster") {
+    if (!interaction.guildId || !interaction.channelId) {
+      await interaction.reply({ content: "Use this on the Pizza Core roster post inside the PizzaWarriors server.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    if (!canManageCore(interaction.memberPermissions)) {
+      await interaction.reply({ content: "Only members with Manage Events or Manage Server can set the Pizza Core roster.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const members = [...interaction.targetMessage.mentions.users.values()]
+      .filter((user) => !user.bot)
+      .map((user) => ({
+        discordUserId: user.id,
+        displayName: interaction.targetMessage.mentions.members?.get(user.id)?.displayName ?? user.globalName ?? user.username,
+      }));
+    if (!members.length) {
+      await interaction.reply({ content: "I could not find any individual @mentions in that post. Edit the roster so each core player is directly mentioned, then run **Apps → Set Pizza Core Roster** again. Plain names and role mentions are not safe enough for targeted reminders.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    try {
+      const roster = await coreRosters.setRoster(interaction.guildId, {
+        sourceChannelId: interaction.channelId,
+        sourceMessageId: interaction.targetMessage.id,
+        sourceUrl: interaction.targetMessage.url,
+        members,
+      });
+      const sizeNote = roster.members.length === 25 ? "" : ` The current Pizza Core target is 25, so verify that the post contains every core member.`;
+      await interaction.reply({ content: `Saved **${roster.members.length}** directly mentioned Pizza Core member${roster.members.length === 1 ? "" : "s"}.${sizeNote} Future **/ready** cards will compare this roster with every Raid-Helper signup state.`, flags: MessageFlags.Ephemeral });
+    } catch (error) {
+      console.error("Core roster snapshot failed", error);
+      await interaction.reply({ content: "I could not save that roster post. Check that it contains direct member mentions, then try again.", flags: MessageFlags.Ephemeral });
+    }
+    return;
+  }
+  if (interaction.isButton() && interaction.customId.startsWith("core-ping:")) {
+    if (!interaction.guildId || !canManageCore(interaction.memberPermissions)) {
+      await interaction.reply({ content: "Only members with Manage Events or Manage Server can ping the Pizza Core roster.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const eventId = interaction.customId.slice("core-ping:".length);
+    if (!/^\d{16,22}$/.test(eventId)) {
+      await interaction.reply({ content: "That readiness card no longer contains a usable Raid-Helper event ID. Run /ready again.", flags: MessageFlags.Ephemeral });
+      return;
+    }
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    try {
+      const roster = await coreRosters.getRoster(interaction.guildId);
+      if (!roster) {
+        await interaction.editReply("No Pizza Core roster is saved. Right-click the roster post and use **Apps → Set Pizza Core Roster** first.");
+        return;
+      }
+      const event = await getRaidHelperEvent(eventId);
+      const audit = auditCoreRoster(roster, event.signups);
+      if (!audit.actionable.length) {
+        await interaction.editReply("Everyone on the saved Pizza Core roster is now signed or otherwise accounted for. No reminder was sent.");
+        return;
+      }
+      const recentPing = await coreRosters.recentMatchingPing(interaction.guildId, eventId, audit.fingerprint);
+      if (recentPing) {
+        const minutes = Math.max(1, Math.ceil((recentPing.sentAt + CORE_PING_COOLDOWN_MS - Date.now()) / 60_000));
+        await interaction.editReply(`Those same members were already pinged recently. Try again in about ${minutes} minute${minutes === 1 ? "" : "s"}, or rerun /ready after the signup states change.`);
+        return;
+      }
+      const inFlightKey = `${interaction.guildId}:${eventId}:${audit.fingerprint}`;
+      if (corePingsInFlight.has(inFlightKey)) {
+        await interaction.editReply("That core reminder is already being sent.");
+        return;
+      }
+      if (!interaction.channel?.isSendable()) {
+        await interaction.editReply("I cannot send the reminder in this channel.");
+        return;
+      }
+      corePingsInFlight.add(inFlightKey);
+      try {
+        const userIds = audit.actionable.map((entry) => entry.discordUserId);
+        await interaction.channel.send({ content: coreReminderText(audit), allowedMentions: { users: userIds } });
+        await coreRosters.recordPing(interaction.guildId, eventId, audit.fingerprint);
+        await interaction.editReply(`Pinged **${userIds.length}** core member${userIds.length === 1 ? "" : "s"} who are missing, tentative, or absent.`);
+      } finally {
+        corePingsInFlight.delete(inFlightKey);
+      }
+    } catch (error) {
+      console.error("Core roster reminder failed", error);
+      await interaction.editReply("I could not refresh the Raid-Helper signup or send that reminder. Run /ready again and retry in a moment.");
     }
     return;
   }
@@ -189,14 +305,12 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
       await recentReadyEvents.rememberCore(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
-      if (!report.activeSignups.length) {
-        await interaction.editReply("I found that Raid-Helper event, but it has no signed or late attendees to check yet. Tentative, bench, and absent selections are shown separately and are not counted as raid-ready.");
-        return;
-      }
+      const coreRoster = await coreRosters.getRoster(interaction.guildId);
+      const coreAudit = coreRoster ? auditCoreRoster(coreRoster, report.signups) : undefined;
       const cardName = `raid-ready-${report.eventId}.png`;
-      const card = await cards.renderReady({ report, realm });
+      const card = await cards.renderReady({ report, realm, coreRoster: coreAudit });
       const embed = new EmbedBuilder().setColor(0xff8000).setImage(`attachment://${cardName}`);
-      await interaction.editReply({ embeds: [embed], files: [new AttachmentBuilder(card, { name: cardName })] });
+      await interaction.editReply({ content: "", embeds: [embed], components: coreRosterButtons(report.eventId, coreAudit), files: [new AttachmentBuilder(card, { name: cardName })] });
     } catch (error) {
       console.error("Raid readiness lookup failed", error);
       await interaction.editReply("I could not read that Raid-Helper event. Paste the event's Discord message link or copied event ID, then try again.");
