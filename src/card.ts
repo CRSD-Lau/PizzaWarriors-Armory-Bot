@@ -10,6 +10,7 @@ import type { GuildRoster } from "./guild.js";
 import type { CoreRosterAudit, CoreRosterAuditEntry, CoreRosterStatus } from "./core-roster.js";
 import type { CoreAttendanceHistory } from "./core-attendance.js";
 import { gearScoreTier, itemGearScoreTier } from "./score-tiers.js";
+import { formatCharacterSpecialization } from "./character.js";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const LOGO_FILE = join(ROOT, "assets", "pizzawarriors-armory-discord-icon-1024.png");
@@ -27,6 +28,8 @@ const ROLE_TARGETS: ReadonlyArray<{ role: RaidRole; label: string; target: numbe
 type CardInput = {
   name: string;
   realm: string;
+  className?: string;
+  primarySpec?: string;
   items: GearItem[];
   summary: GearScoreSummary;
   portrait?: Buffer;
@@ -168,6 +171,10 @@ export class ArmoryCardRenderer {
     const context = await browser.newContext({ viewport: { width: 920, height: 1_400 }, deviceScaleFactor: CARD_DEVICE_SCALE_FACTOR });
     const page = await context.newPage();
     const portrait = input.portrait ? dataUrl(input.portrait, "image/png") : undefined;
+    const specialization = formatCharacterSpecialization(input.primarySpec, input.className);
+    const identityLine = [input.realm, ...(specialization ? [specialization] : []), "Equipped Loadout"]
+      .map(escapeHtml)
+      .join(" · ");
     // A tall one-column card is height-capped and aggressively shrunk by Discord.
     // Two balanced columns make the attachment much wider and readable in-chat.
     const equipment = `<div class="equipment-grid"><div>${section("Armor", input.items, input.summary.itemScores, armorSlots.slice(0, 6))}${section("Accessories", input.items, input.summary.itemScores, accessorySlots)}</div><div>${section("Armor", input.items, input.summary.itemScores, armorSlots.slice(6))}${section("Weapons", input.items, input.summary.itemScores, weaponSlots)}</div></div>`;
@@ -194,7 +201,7 @@ export class ArmoryCardRenderer {
       .footer { margin-top: 26px; padding-top: 15px; border-top: 1px solid #303744; color: #8994a6; font-size: 12px; } .footer strong { color: #d9dfe9; }
     </style></head><body><main class="card">
       <header class="brand"><img src="${logo}" alt="PizzaWarriors"><span>PizzaWarriors Armory</span></header>
-      <div class="identity"><div><div class="name">${escapeHtml(input.name)}</div><div class="realm">${escapeHtml(input.realm)} · Equipped Loadout</div></div>${portrait ? `<img class="portrait" src="${portrait}" alt="${escapeHtml(input.name)}">` : ""}</div>
+      <div class="identity"><div><div class="name">${escapeHtml(input.name)}</div><div class="realm">${identityLine}</div></div>${portrait ? `<img class="portrait" src="${portrait}" alt="${escapeHtml(input.name)}">` : ""}</div>
       <div class="stats"><div class="stat gear"><span class="label">GearScore</span><span class="value">${input.summary.score.toLocaleString()}</span><span class="sub">${tier.label}</span></div><div class="stat level-stat"><span class="label">Average iLvl</span><span class="value">${input.summary.averageItemLevel}</span><span class="sub">Equipped average</span></div><div class="stat"><span class="label">Items scored</span><span class="value">${input.summary.scoredItemCount}/19</span><span class="sub">GearScoreLite</span></div></div>
       ${equipment}<div class="footer"><strong>PizzaWarriors Armory</strong> · Warmane Armory · WotLK 3.3.5a GearScoreLite</div>
     </main></body></html>`;

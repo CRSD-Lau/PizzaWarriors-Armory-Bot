@@ -25,6 +25,7 @@ import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
 import { buildReadyReport, getRaidHelperEvent, isPizzaCoreEventTitle, RaiderLinks, RecentReadyEvents } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
+import { formatCharacterSpecialization } from "./character.js";
 import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
 import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
 
@@ -497,7 +498,15 @@ client.on("interactionCreate", async (interaction) => {
       new ButtonBuilder().setLabel("Open Armory").setStyle(ButtonStyle.Link).setURL(character.armoryUrl),
     );
     try {
-      const card = await cards.render({ name, realm, items: character.items, summary, portrait: character.portrait });
+      const card = await cards.render({
+        name,
+        realm,
+        className: character.className,
+        primarySpec: character.primarySpec,
+        items: character.items,
+        summary,
+        portrait: character.portrait,
+      });
       const attachment = new AttachmentBuilder(card, {
         name: cardName,
         description: `${name} armory card`,
@@ -514,8 +523,10 @@ client.on("interactionCreate", async (interaction) => {
         .setColor(tier.color)
         .setTitle(`${name} · ${realm}`)
         .setURL(character.armoryUrl)
-        .setDescription(description)
-        .addFields(
+        .setDescription(description);
+      const specialization = formatCharacterSpecialization(character.primarySpec, character.className);
+      if (specialization) fallback.addFields({ name: "Current spec", value: `**${specialization}**` });
+      fallback.addFields(
           { name: "GearScore", value: `**${summary.score.toLocaleString()}** · ${tier.label}`, inline: true },
           { name: "Average iLvl", value: String(summary.averageItemLevel), inline: true },
           { name: "Items scored", value: `${summary.scoredItemCount}/19`, inline: true },
