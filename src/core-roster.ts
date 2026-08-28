@@ -135,6 +135,15 @@ export function auditCoreRoster(roster: CoreRosterSnapshot, signups: readonly Ra
   };
 }
 
+/** Active Raid-Helper attendees who are not part of the saved Pizza Core roster. */
+export function activeSignupsOutsideCore(audit: Pick<CoreRosterAudit, "entries">, signups: readonly RaidSignup[]): RaidSignup[] {
+  const coreUserIds = new Set(audit.entries.map((entry) => entry.discordUserId));
+  return signups.filter((signup) => (
+    (signup.status === "Signed" || signup.status === "Late")
+    && !coreUserIds.has(signup.discordUserId)
+  ));
+}
+
 /** Render a safe public reminder; Discord controls the actual pings separately. */
 export function coreReminderText(audit: CoreRosterAudit): string {
   const lines = ["**Pizza Core signup response needed**"];

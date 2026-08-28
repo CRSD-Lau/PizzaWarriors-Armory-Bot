@@ -5,6 +5,7 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ChannelType,
   Client,
   ContextMenuCommandBuilder,
   EmbedBuilder,
@@ -22,7 +23,7 @@ import { ArmoryCardRenderer } from "./card.js";
 import { config } from "./config.js";
 import { calculateGearScore } from "./gearscore.js";
 import { upgradeSpecNames, getSheetUpgradeProfile } from "./sheet-upgrades.js";
-import { buildReadyReport, getRaidHelperEvent, isPizzaCoreEventTitle, RaiderLinks, RecentReadyEvents } from "./ready.js";
+import { buildReadyReport, getRaidHelperEvent, isCurrentPizzaCoreEvent, isPizzaCoreEventTitle, RaiderLinks, RecentReadyEvents, selectCurrentPizzaCoreEvent, type RaidHelperEvent } from "./ready.js";
 import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
 import { formatCharacterSpecialization } from "./character.js";
@@ -105,6 +106,7 @@ const lookupCooldowns = new Map<string, number>();
 const corePingsInFlight = new Set<string>();
 const LOOKUP_COOLDOWN_MS = 10_000;
 const ROSTER_PAGE_SIZE = 10;
+const RAID_HELPER_BOT_ID = "579155972115660803";
 
 function rosterButtonId(page: number, realm: string, guildName: string): string {
   return `roster:${page}:${realm}:${encodeURIComponent(guildName)}`;
@@ -121,6 +123,22 @@ function rosterButtons(roster: GuildRoster, page: number): ActionRowBuilder<Butt
 
 function canManageCore(memberPermissions: Readonly<PermissionsBitField> | null): boolean {
   return Boolean(memberPermissions?.has(PermissionFlagsBits.ManageEvents) || memberPermissions?.has(PermissionFlagsBits.ManageGuild));
+}
+
+async function discoverCurrentCoreEvent(guildId: string): Promise<RaidHelperEvent | undefined> {
+  if (!config.raidHelperChannelId) return undefined;
+  const channel = await client.channels.fetch(config.raidHelperChannelId);
+  if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) || channel.guildId !== guildId) {
+    throw new Error("RAID_HELPER_CHANNEL_ID is not an accessible text channel in this server.");
+  }
+  const messages = await channel.messages.fetch({ limit: 100 });
+  const candidateIds = messages
+    .filter((message) => message.author.id === RAID_HELPER_BOT_ID)
+    .map((message) => message.id)
+    .slice(0, 25);
+  const results = await Promise.allSettled(candidateIds.map((eventId) => getRaidHelperEvent(eventId)));
+  const events = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+  return selectCurrentPizzaCoreEvent(events);
 }
 
 async function recordCoreAttendance(
@@ -388,14 +406,38 @@ client.on("interactionCreate", async (interaction) => {
     }
     const suppliedEvent = interaction.options.getString("event")?.trim();
     const savedEvent = suppliedEvent ? undefined : await recentReadyEvents.core(interaction.guildId);
-    if (!suppliedEvent && !savedEvent) {
+    if (!suppliedEvent && !savedEvent && !config.raidHelperChannelId) {
       await interaction.reply({ content: "No Pizza Core ICC25 event is saved yet. Run **/ready** once with that Raid-Helper message link; after that, plain **/ready** will use it automatically.", flags: MessageFlags.Ephemeral });
       return;
     }
-    const event = suppliedEvent ?? savedEvent!.eventId;
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
-    await interaction.reply({ content: suppliedEvent ? "Building Pizza Core raid-readiness card…" : `Building raid-readiness card for **${savedEvent!.title}**…`, flags: MessageFlags.SuppressNotifications });
+    await interaction.reply({ content: suppliedEvent ? "Building Pizza Core raid-readiness card…" : "Finding the current Pizza Core ICC25 signup…", flags: MessageFlags.SuppressNotifications });
     try {
+      let event = suppliedEvent;
+      let selectedTitle: string | undefined;
+      if (!event) {
+        let discoveredEvent: RaidHelperEvent | undefined;
+        try {
+          discoveredEvent = await discoverCurrentCoreEvent(interaction.guildId);
+        } catch (error) {
+          console.warn("Current Pizza Core event discovery failed; checking the saved event.", error);
+        }
+        if (discoveredEvent) {
+          event = discoveredEvent.eventId;
+          selectedTitle = discoveredEvent.title;
+        } else if (savedEvent) {
+          const savedEventDetails = await getRaidHelperEvent(savedEvent.eventId);
+          if (isCurrentPizzaCoreEvent(savedEventDetails)) {
+            event = savedEvent.eventId;
+            selectedTitle = savedEventDetails.title;
+          }
+        }
+        if (!event) {
+          await interaction.editReply("I could not find a current **Pizza Core ICC25** signup. The older saved event was not reused. Paste the current Raid-Helper message link in the `event` option and try again.");
+          return;
+        }
+        await interaction.editReply(`Building raid-readiness card for **${selectedTitle ?? "Pizza Core ICC25"}**…`);
+      }
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
       await recentReadyEvents.rememberCore(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
       const coreRoster = await coreRosters.getRoster(interaction.guildId);

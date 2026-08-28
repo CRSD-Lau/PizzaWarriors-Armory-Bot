@@ -20,8 +20,9 @@ Run `/ready` normally. The card adds a **Core roster responses** section that co
 - Benched players.
 - Absent players.
 - Core members who do not appear in the event at all, shown as missing.
+- Active signups outside the saved core roster, shown separately as non-core signed players.
 
-When a core member is completely missing from the event, the Discord post includes an officer-only **Ping missing signups** button. The reminder is a separate Discord message so its user mentions are actionable. Tentative, bench, and absent selections remain visible but are treated as intentional responses.
+The response box lists non-core signed players, missing core members, Tentative members, and Absent members by name. When a core member is completely missing from the event, the Discord post includes an officer-only **Ping missing signups** button. The reminder is a separate Discord message so its user mentions are actionable. Tentative, bench, and absent selections remain visible but are treated as intentional responses.
 
 ## Review week-over-week history
 
