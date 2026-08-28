@@ -27,11 +27,11 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Generates a branded PizzaWarriors equipment card with legendary orange GearScore and blue iLvl hierarchy.
 - Includes an **Open Armory** link and a resilient text-embed fallback.
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
-- Compares Raid-Helper responses with an officer-selected Pizza Core roster and can safely ping only core members who have not responded at all.
+- Compares Raid-Helper responses with the live **Well Timed Pizza** role and can safely ping only current core members who have not responded at all.
 - Privately tracks Pizza Core signup responses week over week for officers without re-opening old Raid-Helper events.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
 - Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
-- Runs without a database, web dashboard, message-content intent, or guild-roster sync.
+- Runs without a database, web dashboard, message-content intent, or continuous guild-member monitoring.
 
 ## Commands
 
@@ -47,7 +47,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 /upgrade name:Lausudo realm:Lordaeron spec:Fury
 ```
 
-`/ready` finds the current **Pizza Core ICC25** post in the configured Raid-Helper channel, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. Officers can also snapshot a directly mentioned core-roster post through **Apps → Set Pizza Core Roster**; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
+`/ready` finds the current **Pizza Core ICC25** post in the configured Raid-Helper channel, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Well Timed Pizza** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
 
 `/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Every Pizza Core `/ready` run creates or refreshes one snapshot per Raid-Helper event ID. Missing means no signup existed anywhere in that event; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
 
@@ -63,7 +63,7 @@ Supported realms are **Lordaeron**, **Icecrown**, and **Blackrock**. The configu
 - Google Chrome (used in headless mode to render the card without opening terminal windows)
 - A Discord application with a bot token and application ID
 
-The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. It does not monitor messages or require a Raid-Helper API key; when `/ready` runs, it reads recent message IDs from the single configured Raid-Helper channel to locate the current public event. Saving the core roster and viewing private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
+The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. Role-backed core tracking additionally requires **Server Members Intent** to be enabled for the application so the bot can call Discord's member-list endpoint on demand. The client does not subscribe to member gateway events, monitor messages, or require a Raid-Helper API key. Core reminders and private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
 
 ## Quick start
 
@@ -86,6 +86,8 @@ DISCORD_CLIENT_ID=your-application-id
 ```
 
 Set `RAID_HELPER_CHANNEL_ID` to the Discord channel containing the weekly Pizza Core signup. This lets plain `/ready` select the nearest current or upcoming **Pizza Core ICC25** event and prevents a completed saved event from being silently reused.
+
+Set `PIZZA_CORE_ROLE_ID` to the **Well Timed Pizza** role ID and enable **Server Members Intent** on the application's **Bot** page in Discord's Developer Portal. Role membership then becomes the live source of truth for `/ready`, reminders, and the current-core attendance view.
 
 See [`.env.example`](.env.example) for the complete configuration reference. Never commit `.env`, a Discord token, or `WARMANE_COOKIE`.
 
@@ -143,8 +145,9 @@ CI runs the same checks on Node 24. Review [the release checklist](docs/RELEASE-
 - Rendered item-icon URLs are limited to HTTPS Warmane hosts.
 - Character and item text is escaped before card rendering.
 - No general Discord message content, voice activity, or gameplay attendance is stored.
-- An officer-selected core snapshot stores only source-message identifiers, directly mentioned user IDs/display labels, and reminder timestamps in ignored `data/core-rosters.json`.
-- Private signup history stores per-event Raid-Helper response states for the saved core roster in ignored `data/core-attendance.json`; `/attendance` replies are ephemeral.
+- The configured core role is fetched only when `/ready`, `/attendance`, or an officer reminder needs it; the bot does not subscribe to guild-member gateway events.
+- The optional roster-post link and reminder timestamps remain in ignored `data/core-rosters.json`.
+- Private signup history stores the per-event role roster and Raid-Helper response states in ignored `data/core-attendance.json`; `/attendance` replies are ephemeral.
 - Optional `/raider link` entries contain only Discord user ID, character name, and realm in `data/raider-links.json`; the file is excluded from Git.
 
 Read the [security policy](SECURITY.md) and the current [security review](docs/SECURITY-REVIEW.md) before hosting or contributing.

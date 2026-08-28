@@ -29,6 +29,7 @@ import { gearScoreTier } from "./score-tiers.js";
 import { formatCharacterSpecialization } from "./character.js";
 import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
 import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
+import { CoreRoleRosterError, fetchCoreRoleMembers, roleBackedCoreRoster } from "./core-role.js";
 
 const command = new SlashCommandBuilder()
   .setName("armory")
@@ -101,6 +102,7 @@ const raiderLinks = new RaiderLinks();
 const recentReadyEvents = new RecentReadyEvents();
 const coreRosters = new CoreRosterStore();
 const coreAttendance = new CoreAttendanceStore();
+const discordRest = new REST({ version: "10" }).setToken(config.discordToken);
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 const lookupCooldowns = new Map<string, number>();
 const corePingsInFlight = new Set<string>();
@@ -123,6 +125,13 @@ function rosterButtons(roster: GuildRoster, page: number): ActionRowBuilder<Butt
 
 function canManageCore(memberPermissions: Readonly<PermissionsBitField> | null): boolean {
   return Boolean(memberPermissions?.has(PermissionFlagsBits.ManageEvents) || memberPermissions?.has(PermissionFlagsBits.ManageGuild));
+}
+
+async function currentCoreRoster(guildId: string): Promise<CoreRosterSnapshot | undefined> {
+  const previous = await coreRosters.getRoster(guildId);
+  if (!config.pizzaCoreRoleId) return previous;
+  const members = await fetchCoreRoleMembers(discordRest, guildId, config.pizzaCoreRoleId);
+  return roleBackedCoreRoster({ guildId, roleId: config.pizzaCoreRoleId, members, ...(previous ? { previous } : {}) });
 }
 
 async function discoverCurrentCoreEvent(guildId: string): Promise<RaidHelperEvent | undefined> {
@@ -213,11 +222,10 @@ async function rosterMessage(roster: GuildRoster, page: number) {
 }
 
 async function registerCommand(): Promise<void> {
-  const rest = new REST({ version: "10" }).setToken(config.discordToken);
   const route = config.discordGuildId
     ? Routes.applicationGuildCommands(config.discordClientId, config.discordGuildId)
     : Routes.applicationCommands(config.discordClientId);
-  await rest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), attendanceCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON()] });
+  await discordRest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), attendanceCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON()] });
 }
 
 client.once(Events.ClientReady, () => console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`));
@@ -263,7 +271,10 @@ client.on("interactionCreate", async (interaction) => {
         members,
       });
       const sizeNote = roster.members.length === 25 ? "" : ` The current Pizza Core target is 25, so verify that the post contains every core member.`;
-      await interaction.reply({ content: `Saved **${roster.members.length}** directly mentioned Pizza Core member${roster.members.length === 1 ? "" : "s"}.${sizeNote} Future **/ready** cards will compare this roster with every Raid-Helper signup state.`, flags: MessageFlags.Ephemeral });
+      const roleNote = config.pizzaCoreRoleId
+        ? " Membership is read live from the **Well Timed Pizza** role; this post remains the roster link on readiness cards."
+        : " Future **/ready** cards will compare this saved roster with every Raid-Helper signup state.";
+      await interaction.reply({ content: `Saved **${roster.members.length}** directly mentioned Pizza Core member${roster.members.length === 1 ? "" : "s"}.${sizeNote}${roleNote}`, flags: MessageFlags.Ephemeral });
     } catch (error) {
       console.error("Core roster snapshot failed", error);
       await interaction.reply({ content: "I could not save that roster post. Check that it contains direct member mentions, then try again.", flags: MessageFlags.Ephemeral });
@@ -282,7 +293,7 @@ client.on("interactionCreate", async (interaction) => {
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-      const roster = await coreRosters.getRoster(interaction.guildId);
+      const roster = await currentCoreRoster(interaction.guildId);
       if (!roster) {
         await interaction.editReply("No Pizza Core roster is saved. Right-click the roster post and use **Apps → Set Pizza Core Roster** first.");
         return;
@@ -320,7 +331,9 @@ client.on("interactionCreate", async (interaction) => {
       }
     } catch (error) {
       console.error("Core roster reminder failed", error);
-      await interaction.editReply("I could not refresh the Raid-Helper signup or send that reminder. Run /ready again and retry in a moment.");
+      await interaction.editReply(error instanceof CoreRoleRosterError
+        ? error.message
+        : "I could not refresh the Raid-Helper signup or send that reminder. Run /ready again and retry in a moment.");
     }
     return;
   }
@@ -348,13 +361,15 @@ client.on("interactionCreate", async (interaction) => {
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
     try {
-      const roster = await coreRosters.getRoster(interaction.guildId);
+      const roster = await currentCoreRoster(interaction.guildId);
       if (!roster) {
         await interaction.editReply("No Pizza Core roster is saved. Right-click the officer roster post and use **Apps → Set Pizza Core Roster** first.");
         return;
       }
       const weeks = interaction.options.getInteger("weeks") ?? 8;
-      await backfillKnownCoreAttendance(interaction.guildId, roster, weeks);
+      // Role membership is current, not historical. Only backfill message-snapshot
+      // rosters so newly promoted core members are not charged for older raids.
+      if (!config.pizzaCoreRoleId) await backfillKnownCoreAttendance(interaction.guildId, roster, weeks);
       const history = buildCoreAttendanceHistory(roster, await coreAttendance.list(interaction.guildId, weeks), weeks);
       if (!history.events.length) {
         await interaction.editReply("No Pizza Core history has been captured yet. Run **/ready** for the current Pizza Core event; future weekly runs will update this private report automatically.");
@@ -372,7 +387,9 @@ client.on("interactionCreate", async (interaction) => {
       });
     } catch (error) {
       console.error("Core attendance report failed", error);
-      await interaction.editReply("I could not build the private signup-history report. The saved history was left unchanged; try again in a moment.");
+      await interaction.editReply(error instanceof CoreRoleRosterError
+        ? error.message
+        : "I could not build the private signup-history report. The saved history was left unchanged; try again in a moment.");
     }
     return;
   }
@@ -440,7 +457,7 @@ client.on("interactionCreate", async (interaction) => {
       }
       const report = await buildReadyReport({ event, realm, guildId: interaction.guildId, armory, links: raiderLinks });
       await recentReadyEvents.rememberCore(interaction.guildId, { eventId: report.eventId, title: report.eventTitle });
-      const coreRoster = await coreRosters.getRoster(interaction.guildId);
+      const coreRoster = await currentCoreRoster(interaction.guildId);
       const coreAudit = coreRoster ? auditCoreRoster(coreRoster, report.signups) : undefined;
       if (coreAudit) {
         await recordCoreAttendance(interaction.guildId, {
@@ -463,7 +480,9 @@ client.on("interactionCreate", async (interaction) => {
       });
     } catch (error) {
       console.error("Raid readiness lookup failed", error);
-      await interaction.editReply("I could not read that Raid-Helper event. Paste the event's Discord message link or copied event ID, then try again.");
+      await interaction.editReply(error instanceof CoreRoleRosterError
+        ? error.message
+        : "I could not read that Raid-Helper event. Paste the event's Discord message link or copied event ID, then try again.");
     }
     return;
   }

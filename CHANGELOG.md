@@ -13,6 +13,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Changed
 
+- Made the **Well Timed Pizza** Discord role the live Pizza Core source for `/ready`, reminders, and current-core attendance views.
 - Made plain `/ready` discover the current Pizza Core ICC25 post instead of silently reusing a completed saved event.
 - Expanded `/ready` core responses to list signed non-core guests, Tentative members, and Absent members by name alongside members who have not signed up.
 - Added the Armory-reported current specialization and class to `/armory` cards and their text fallback.
@@ -26,6 +27,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Security
 
+- Enabled on-demand Discord member listing for one configured core role while retaining the minimal `Guilds` gateway subscription and exact-user reminder allowlists.
 - Kept the bot on the `Guilds` intent by using a deliberate message context command instead of monitoring channel content.
 - Restricted core-roster configuration and reminders to event/server managers.
 - Restricted attendance history through command visibility, runtime permission checks, ephemeral replies, and an ignored host-local data file.

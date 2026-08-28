@@ -2,14 +2,14 @@
 
 The bot can compare the canonical Pizza Core roster with every state in the current Raid-Helper event and safely notify only members who still need attention.
 
-## Save or update the core roster
+## Configure the core role
 
-1. Use a Discord roster post that directly `@mentions` every Pizza Core member. Plain names and role mentions are intentionally not guessed.
-2. Right-click the roster post.
-3. Select **Apps → Set Pizza Core Roster**.
-4. Confirm the private response reports the expected member count.
+1. Assign every current core raider the **Well Timed Pizza** role and remove it when they leave the core.
+2. Copy that role's Discord ID into `PIZZA_CORE_ROLE_ID`.
+3. In Discord's Developer Portal, open the application's **Bot** page and enable **Server Members Intent**.
+4. Restart the bot and run `/ready`.
 
-Running the same action on an edited or replacement post safely replaces the saved snapshot. The command requires Discord's **Manage Events** permission.
+The role is refreshed directly from Discord whenever `/ready`, `/attendance`, or the reminder button needs the current core. No second roster update command is required. The optional **Apps → Set Pizza Core Roster** action may still save a roster-post link for the card's **Open Core Roster** button; its mentioned-member snapshot is not used while role mode is configured.
 
 ## Use it with `/ready`
 
@@ -20,7 +20,7 @@ Run `/ready` normally. The card adds a **Core roster responses** section that co
 - Benched players.
 - Absent players.
 - Core members who do not appear in the event at all, shown as missing.
-- Active signups outside the saved core roster, shown separately as non-core signed players.
+- Active signups outside the live core role, shown separately as non-core signed players.
 
 The response box lists non-core signed players, missing core members, Tentative members, and Absent members by name. When a core member is completely missing from the event, the Discord post includes an officer-only **Ping missing signups** button. The reminder is a separate Discord message so its user mentions are actionable. Tentative, bench, and absent selections remain visible but are treated as intentional responses.
 
@@ -28,7 +28,7 @@ The response box lists non-core signed players, missing core members, Tentative 
 
 Run `/attendance` to receive a private officer report for the latest eight Pizza Core raids, or set `weeks` from 2 through 12. The command is hidden by default from members without **Manage Events**, checks **Manage Events** or **Manage Server** again at runtime, and always responds ephemerally so the result is visible only to the officer who invoked it.
 
-Every Pizza Core `/ready` run creates or refreshes one saved snapshot keyed by the Raid-Helper event ID. Running `/ready` repeatedly for the same event updates that week instead of creating duplicates. `/attendance` also backfills any locally remembered Pizza Core events that do not have a snapshot yet.
+Every Pizza Core `/ready` run creates or refreshes one saved snapshot keyed by the Raid-Helper event ID. Running `/ready` repeatedly for the same event updates that week instead of creating duplicates. Role-backed mode does not retroactively backfill older raids with today's membership, so newly promoted players are not charged for events before they joined the core.
 
 The history preserves these meanings:
 
@@ -48,4 +48,4 @@ Raid-Helper signup data cannot prove whether someone who signed actually entered
 
 ## Local data
 
-The roster snapshot is stored only on the bot host in `data/core-rosters.json`. It contains the source message identifiers, the directly mentioned user IDs and display labels, and per-event reminder timestamps. Week-over-week response history is stored separately in `data/core-attendance.json`. Both files are excluded from Git.
+Current role membership is loaded on demand and is not stored as a continuously synchronized guild roster. The optional roster-post link and per-event reminder timestamps are kept only on the bot host in `data/core-rosters.json`. Week-over-week response history stores the exact core membership and signup state captured for each event in `data/core-attendance.json`. Both files are excluded from Git.
