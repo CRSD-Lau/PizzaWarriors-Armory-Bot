@@ -8,6 +8,7 @@ const RAID_HELPER_API = "https://raid-helper.xyz/api/v4/events";
 const LINKS_FILE = join(process.cwd(), "data", "raider-links.json");
 const RECENT_EVENTS_FILE = join(process.cwd(), "data", "recent-ready-events.json");
 const CORE_EVENT_KEY = "pizzacoreicc25";
+const CURRENT_EVENT_GRACE_MS = 18 * 60 * 60 * 1_000;
 
 export type RaiderLink = { name: string; realm: string };
 export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
@@ -32,6 +33,7 @@ export type ReadyReport = {
   members: ReadyMember[];
   unresolved: Array<{ signup: RaidSignup; reason: string }>;
 };
+export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; signups: RaidSignup[] };
 
 type LinkStore = Record<string, RaiderLink>;
 export type RecentReadyEvent = { eventId: string; title: string; usedAt: number };
@@ -164,16 +166,29 @@ export function parseRaidHelperSignups(payload: unknown): RaidSignup[] {
   return [...found.values()];
 }
 
-function eventIdFromInput(value: string): string | undefined {
-  const match = value.match(/\d{16,22}/);
-  return match?.[0];
+export function eventIdFromInput(value: string): string | undefined {
+  const matches = [...value.matchAll(/\d{16,22}/g)];
+  return matches.at(-1)?.[0];
 }
 
 export function isPizzaCoreEventTitle(title: string): boolean {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "").includes(CORE_EVENT_KEY);
 }
 
-export async function getRaidHelperEvent(value: string): Promise<{ eventId: string; title: string; startsAt?: number; signups: RaidSignup[] }> {
+export function isCurrentPizzaCoreEvent(event: Pick<RaidHelperEvent, "title" | "startsAt">, now = Date.now()): boolean {
+  return isPizzaCoreEventTitle(event.title)
+    && event.startsAt !== undefined
+    && event.startsAt >= now - CURRENT_EVENT_GRACE_MS;
+}
+
+export function selectCurrentPizzaCoreEvent(events: readonly RaidHelperEvent[], now = Date.now()): RaidHelperEvent | undefined {
+  const datedCoreEvents = events
+    .filter((event): event is RaidHelperEvent & { startsAt: number } => isPizzaCoreEventTitle(event.title) && event.startsAt !== undefined)
+    .sort((left, right) => left.startsAt - right.startsAt);
+  return datedCoreEvents.find((event) => isCurrentPizzaCoreEvent(event, now));
+}
+
+export async function getRaidHelperEvent(value: string): Promise<RaidHelperEvent> {
   const eventId = eventIdFromInput(value);
   if (!eventId) throw new Error("Provide a Raid-Helper event message link or its copied Discord event ID.");
   const response = await fetch(`${RAID_HELPER_API}/${eventId}`, { headers: { accept: "application/json", "user-agent": "PizzaWarriorsArmoryBot/1.0" }, signal: AbortSignal.timeout(15_000) });

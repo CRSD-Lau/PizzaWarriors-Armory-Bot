@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  activeSignupsOutsideCore,
   auditCoreRoster,
   CORE_PING_COOLDOWN_MS,
   coreReminderText,
@@ -44,6 +45,7 @@ assert.equal(audit.tentative.length, 1);
 assert.equal(audit.bench.length, 1);
 assert.equal(audit.absent.length, 1);
 assert.equal(audit.missing.length, 1);
+assert.deepEqual(activeSignupsOutsideCore(audit, signups).map((signup) => signup.displayName), ["Noncore"]);
 assert.deepEqual(audit.actionable.map((entry) => [entry.discordUserId, entry.status]), [
   ["123456789012345606", "Missing"],
 ]);

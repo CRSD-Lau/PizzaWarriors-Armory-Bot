@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { buildReadyReport, parseRaidHelperSignups, RaiderLinks } from "../src/ready.js";
+import { buildReadyReport, eventIdFromInput, parseRaidHelperSignups, RaiderLinks, selectCurrentPizzaCoreEvent } from "../src/ready.js";
 import type { WarmaneArmory } from "../src/armory.js";
 
 const signups = parseRaidHelperSignups({
@@ -42,6 +42,33 @@ assert.deepEqual(v4Signups, [
   { discordUserId: "123456789012345691", displayName: "Benchdruid", reportedSpec: "Feral", reportedRole: "Melee", status: "Bench" },
   { discordUserId: "123456789012345692", displayName: "Awayrogue", status: "Absent" },
 ]);
+
+assert.equal(
+  eventIdFromInput("https://discord.com/channels/613250899548307466/1517578708704170045/1540594340462592054"),
+  "1540594340462592054",
+  "Discord message links must resolve to the final message/event ID",
+);
+
+const oldCoreEvent = { eventId: "1", title: "Pizza Core ICC25", startsAt: Date.UTC(2026, 7, 22, 2), signups: [] };
+const currentCoreEvent = { eventId: "2", title: "Pizza Core ICC25", startsAt: Date.UTC(2026, 7, 29, 2), signups: [] };
+const otherRaid = { eventId: "3", title: "Brother Raid Pt. 1", startsAt: Date.UTC(2026, 7, 30, 2), signups: [] };
+assert.equal(
+  selectCurrentPizzaCoreEvent([oldCoreEvent, otherRaid, currentCoreEvent], Date.UTC(2026, 7, 28, 12))?.eventId,
+  currentCoreEvent.eventId,
+);
+assert.equal(
+  selectCurrentPizzaCoreEvent([oldCoreEvent], Date.UTC(2026, 7, 28, 12)),
+  undefined,
+  "a completed saved event must not become the plain /ready default",
+);
+assert.equal(
+  selectCurrentPizzaCoreEvent([
+    currentCoreEvent,
+    { ...currentCoreEvent, eventId: "4", startsAt: Date.UTC(2026, 8, 5, 2) },
+  ], Date.UTC(2026, 7, 29, 4))?.eventId,
+  currentCoreEvent.eventId,
+  "the raid that recently started must win over next week's signup",
+);
 
 async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
   const originalFetch = globalThis.fetch;
