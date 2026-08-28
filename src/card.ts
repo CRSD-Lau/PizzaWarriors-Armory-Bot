@@ -47,6 +47,11 @@ const classColors: Record<string, string> = {
   Priest: "#ffffff", Rogue: "#fff569", Shaman: "#0070de", Warlock: "#9482c9", Warrior: "#c79c6e",
 };
 
+/** Prefer the class selected in Raid-Helper, even when Armory gear lookup failed. */
+export function raidSignupNameColor(signup: Pick<RaidSignup, "reportedClass">, resolvedClass?: string): string {
+  return classColors[signup.reportedClass ?? resolvedClass ?? ""] ?? "#f1f3f7";
+}
+
 function escapeHtml(value: string): string {
   return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
 }
@@ -273,7 +278,7 @@ export class ArmoryCardRenderer {
         const score = member?.summary.score;
         const preparation = member?.preparation.status;
         const prepLabel = preparation === "complete" ? "✓" : preparation === "incomplete" ? "!" : "?";
-        return `<div class="ready-row"><span class="ready-name" style="color:${classColors[member?.className ?? ""] ?? "#f1f3f7"}">${escapeHtml(signup.displayName)}</span><span class="ready-spec">${escapeHtml(formatSpec(signup.reportedSpec ?? "No spec"))}</span><span class="ready-ilvl">${member ? `i${member.summary.averageItemLevel}` : "—"}</span><span class="ready-gs ${score !== undefined && score >= RAID_READY_GEAR_SCORE ? "ready" : "review"}">${score?.toLocaleString() ?? "—"}</span><span class="prep ${preparation ?? "unverified"}">${prepLabel}</span></div>`;
+        return `<div class="ready-row"><span class="ready-name" style="color:${raidSignupNameColor(signup, member?.className)}">${escapeHtml(signup.displayName)}</span><span class="ready-spec">${escapeHtml(formatSpec(signup.reportedSpec ?? "No spec"))}</span><span class="ready-ilvl">${member ? `i${member.summary.averageItemLevel}` : "—"}</span><span class="ready-gs ${score !== undefined && score >= RAID_READY_GEAR_SCORE ? "ready" : "review"}">${score?.toLocaleString() ?? "—"}</span><span class="prep ${preparation ?? "unverified"}">${prepLabel}</span></div>`;
       }).join("");
       const sortByGearScore = (left: RaidSignup, right: RaidSignup) => (memberBySignup.get(right.discordUserId)?.summary.score ?? -1)
         - (memberBySignup.get(left.discordUserId)?.summary.score ?? -1);

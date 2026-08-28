@@ -21,7 +21,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Fixed
 
-- Made `/ready` class colors follow Raid-Helper's selected class instead of a conflicting Armory character class.
+- Made `/ready` class colors follow Raid-Helper's selected class even when that signup's Armory gear profile is unavailable.
 - Sent `/armory`, `/upgrade`, and `/roster` cards as direct image attachments instead of nesting them inside Discord image embeds.
 
 ### Security

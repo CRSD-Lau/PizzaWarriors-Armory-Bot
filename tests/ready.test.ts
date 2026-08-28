@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { buildReadyReport, eventIdFromInput, parseRaidHelperSignups, RaiderLinks, selectCurrentPizzaCoreEvent } from "../src/ready.js";
+import { raidSignupNameColor } from "../src/card.js";
 import type { WarmaneArmory } from "../src/armory.js";
 
 const signups = parseRaidHelperSignups({
@@ -32,6 +33,8 @@ assert.deepEqual(signups, [
 const v4Signups = parseRaidHelperSignups({
   signUps: [
     { userId: "123456789012345690", name: "Activepal", cClassName: "Paladin", specName: "Retribution", roleName: "Melee", status: "primary" },
+    { userId: "123456789012345693", name: "Fathermonster", cClassName: "Paladin", cSpecName: "Holy1", cRoleName: "Healers", status: "primary" },
+    { userId: "123456789012345694", name: "Nanie", cClassName: "Shaman", cSpecName: "Elemental", cRoleName: "Ranged", status: "primary" },
     { userId: "123456789012345691", name: "Benchdruid", cClassName: "Bench", specName: "Feral", status: "primary" },
     { userId: "123456789012345692", name: "Awayrogue", cClassName: "Absence", status: "primary" },
   ],
@@ -39,9 +42,15 @@ const v4Signups = parseRaidHelperSignups({
 
 assert.deepEqual(v4Signups, [
   { discordUserId: "123456789012345690", displayName: "Activepal", reportedClass: "Paladin", reportedSpec: "Retribution", reportedRole: "Melee", status: "Signed" },
+  { discordUserId: "123456789012345693", displayName: "Fathermonster", reportedClass: "Paladin", reportedSpec: "Holy1", reportedRole: "Healers", status: "Signed" },
+  { discordUserId: "123456789012345694", displayName: "Nanie", reportedClass: "Shaman", reportedSpec: "Elemental", reportedRole: "Ranged", status: "Signed" },
   { discordUserId: "123456789012345691", displayName: "Benchdruid", reportedSpec: "Feral", reportedRole: "Melee", status: "Bench" },
   { discordUserId: "123456789012345692", displayName: "Awayrogue", status: "Absent" },
 ]);
+
+assert.equal(raidSignupNameColor(v4Signups[1]!), "#f58cba", "unresolved Holy Paladins must remain Paladin pink");
+assert.equal(raidSignupNameColor(v4Signups[2]!), "#0070de", "unresolved Elemental Shamans must remain Shaman blue");
+assert.equal(raidSignupNameColor({}), "#f1f3f7", "unknown classes keep the neutral fallback");
 
 assert.equal(
   eventIdFromInput("https://discord.com/channels/613250899548307466/1517578708704170045/1540594340462592054"),
