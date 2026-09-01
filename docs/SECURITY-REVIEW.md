@@ -11,7 +11,7 @@ No known production dependency vulnerabilities were reported by `npm audit --omi
 
 | Area | Control |
 | --- | --- |
-| Discord access | `Guilds` gateway intent only; Server Members Intent enables on-demand HTTP member listing for one configured role, without subscribing to member events or broad Message Content access. |
+| Discord access | `Guilds` gateway intent only; on-demand REST reads are limited to configured signup-channel/forum metadata and one configured core role. Server Members Intent enables role lookup without subscribing to member events or broad Message Content access. |
 | Core reminders | Missing-signup-only targeting, Manage Events/Manage Server gate, exact user-ID allowlist, no role/everyone mentions, and a 30-minute unchanged-state cooldown. |
 | Local roster data | Current role membership is not continuously synchronized; optional source-message metadata and reminder timestamps remain local, while event-specific attendance snapshots retain only core IDs, labels, and response states. |
 | Credentials | `.env` and runtime cache are ignored; documented rotation and reporting path. |
@@ -23,6 +23,7 @@ No known production dependency vulnerabilities were reported by `npm audit --omi
 ## Residual risks
 
 - Warmane is an external, best-effort source and may rate-limit or challenge automated lookups.
+- Automatic Raid-Helper discovery depends on access to active and public archived threads in the configured signup forum; it accepts only threads owned by Raid-Helper and narrows to the Pizza Core forum tag when present.
 - `WARMANE_COOKIE` is optional but sensitive. Treat it like a password and rotate it if exposed.
 - The card renderer depends on an installed Google Chrome channel; the bot falls back to a text embed if card rendering fails.
 - Roster accuracy depends on consistently assigning and removing the configured **Well Timed Pizza** role. If Discord denies role-member refresh, the bot fails closed instead of silently reusing the stale message snapshot.
