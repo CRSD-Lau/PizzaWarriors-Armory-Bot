@@ -13,6 +13,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Changed
 
+- Updated plain `/ready` discovery to support Raid-Helper-authored Discord forum posts, including active and recently archived Pizza Core threads.
 - Made the **Well Timed Pizza** Discord role the live Pizza Core source for `/ready`, reminders, and current-core attendance views.
 - Made plain `/ready` discover the current Pizza Core ICC25 post instead of silently reusing a completed saved event.
 - Expanded `/ready` core responses to list signed non-core guests, Tentative members, and Absent members by name alongside members who have not signed up.

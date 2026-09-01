@@ -190,7 +190,7 @@ export function selectCurrentPizzaCoreEvent(events: readonly RaidHelperEvent[], 
 
 export async function getRaidHelperEvent(value: string): Promise<RaidHelperEvent> {
   const eventId = eventIdFromInput(value);
-  if (!eventId) throw new Error("Provide a Raid-Helper event message link or its copied Discord event ID.");
+  if (!eventId) throw new Error("Provide a Raid-Helper forum post link or its copied Discord event ID.");
   const response = await fetch(`${RAID_HELPER_API}/${eventId}`, { headers: { accept: "application/json", "user-agent": "PizzaWarriorsArmoryBot/1.0" }, signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`Raid-Helper returned ${response.status} for that event.`);
   const payload: unknown = await response.json();

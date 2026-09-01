@@ -47,7 +47,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 /upgrade name:Lausudo realm:Lordaeron spec:Fury
 ```
 
-`/ready` finds the current **Pizza Core ICC25** post in the configured Raid-Helper channel, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Well Timed Pizza** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
+`/ready` finds the current **Pizza Core ICC25** Raid-Helper post in the configured signup channel or forum, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. Forum discovery checks active and recently archived posts, accepts only posts created by Raid-Helper, and uses the **PizzaCore** or **PizzaRaid** forum tag when available. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Well Timed Pizza** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
 
 `/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Every Pizza Core `/ready` run creates or refreshes one snapshot per Raid-Helper event ID. Missing means no signup existed anywhere in that event; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
 
@@ -85,7 +85,7 @@ DISCORD_TOKEN=your-bot-token
 DISCORD_CLIENT_ID=your-application-id
 ```
 
-Set `RAID_HELPER_CHANNEL_ID` to the Discord channel containing the weekly Pizza Core signup. This lets plain `/ready` select the nearest current or upcoming **Pizza Core ICC25** event and prevents a completed saved event from being silently reused.
+Set `RAID_HELPER_CHANNEL_ID` to the Discord **forum channel ID** containing the weekly Raid-Helper posts (or a legacy text-channel ID). This lets plain `/ready` select the nearest current or upcoming **Pizza Core ICC25** event and prevents a completed saved event or an unrelated forum post from being silently reused.
 
 Set `PIZZA_CORE_ROLE_ID` to the **Well Timed Pizza** role ID and enable **Server Members Intent** on the application's **Bot** page in Discord's Developer Portal. Role membership then becomes the live source of truth for `/ready`, reminders, and the current-core attendance view.
 

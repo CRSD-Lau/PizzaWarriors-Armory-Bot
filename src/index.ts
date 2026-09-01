@@ -5,7 +5,6 @@ import {
   AttachmentBuilder,
   ButtonBuilder,
   ButtonStyle,
-  ChannelType,
   Client,
   ContextMenuCommandBuilder,
   EmbedBuilder,
@@ -30,6 +29,7 @@ import { formatCharacterSpecialization } from "./character.js";
 import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
 import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
 import { CoreRoleRosterError, fetchCoreRoleMembers, roleBackedCoreRoster } from "./core-role.js";
+import { fetchRaidHelperCandidateIds, RaidHelperDiscoveryError } from "./raid-helper-discovery.js";
 
 const command = new SlashCommandBuilder()
   .setName("armory")
@@ -55,7 +55,7 @@ const upgradeCommand = new SlashCommandBuilder()
 const readyCommand = new SlashCommandBuilder()
   .setName("ready")
   .setDescription("Show GearScore and event-selected specs for Pizza Core ICC25")
-  .addStringOption((option) => option.setName("event").setDescription("Optional: paste the current Pizza Core ICC25 message link").setAutocomplete(true))
+  .addStringOption((option) => option.setName("event").setDescription("Optional: paste the current Pizza Core ICC25 forum post link").setAutocomplete(true))
   .addStringOption((option) => option.setName("realm").setDescription("Default realm for unlinked characters").addChoices(
     { name: "Lordaeron", value: "Lordaeron" },
     { name: "Icecrown", value: "Icecrown" },
@@ -136,15 +136,7 @@ async function currentCoreRoster(guildId: string): Promise<CoreRosterSnapshot | 
 
 async function discoverCurrentCoreEvent(guildId: string): Promise<RaidHelperEvent | undefined> {
   if (!config.raidHelperChannelId) return undefined;
-  const channel = await client.channels.fetch(config.raidHelperChannelId);
-  if (!channel || (channel.type !== ChannelType.GuildText && channel.type !== ChannelType.GuildAnnouncement) || channel.guildId !== guildId) {
-    throw new Error("RAID_HELPER_CHANNEL_ID is not an accessible text channel in this server.");
-  }
-  const messages = await channel.messages.fetch({ limit: 100 });
-  const candidateIds = messages
-    .filter((message) => message.author.id === RAID_HELPER_BOT_ID)
-    .map((message) => message.id)
-    .slice(0, 25);
+  const candidateIds = await fetchRaidHelperCandidateIds(discordRest, guildId, config.raidHelperChannelId, RAID_HELPER_BOT_ID);
   const results = await Promise.allSettled(candidateIds.map((eventId) => getRaidHelperEvent(eventId)));
   const events = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
   return selectCurrentPizzaCoreEvent(events);
@@ -424,7 +416,7 @@ client.on("interactionCreate", async (interaction) => {
     const suppliedEvent = interaction.options.getString("event")?.trim();
     const savedEvent = suppliedEvent ? undefined : await recentReadyEvents.core(interaction.guildId);
     if (!suppliedEvent && !savedEvent && !config.raidHelperChannelId) {
-      await interaction.reply({ content: "No Pizza Core ICC25 event is saved yet. Run **/ready** once with that Raid-Helper message link; after that, plain **/ready** will use it automatically.", flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: "No Pizza Core ICC25 event is saved yet. Run **/ready** once with that Raid-Helper forum post link; after that, plain **/ready** will use it automatically.", flags: MessageFlags.Ephemeral });
       return;
     }
     const realm = interaction.options.getString("realm") ?? config.defaultRealm;
@@ -434,9 +426,11 @@ client.on("interactionCreate", async (interaction) => {
       let selectedTitle: string | undefined;
       if (!event) {
         let discoveredEvent: RaidHelperEvent | undefined;
+        let discoveryError: unknown;
         try {
           discoveredEvent = await discoverCurrentCoreEvent(interaction.guildId);
         } catch (error) {
+          discoveryError = error;
           console.warn("Current Pizza Core event discovery failed; checking the saved event.", error);
         }
         if (discoveredEvent) {
@@ -450,7 +444,8 @@ client.on("interactionCreate", async (interaction) => {
           }
         }
         if (!event) {
-          await interaction.editReply("I could not find a current **Pizza Core ICC25** signup. The older saved event was not reused. Paste the current Raid-Helper message link in the `event` option and try again.");
+          if (discoveryError instanceof RaidHelperDiscoveryError) throw discoveryError;
+          await interaction.editReply("I could not find a current **Pizza Core ICC25** signup. The older saved event was not reused. Paste the current Raid-Helper forum post link in the `event` option and try again.");
           return;
         }
         await interaction.editReply(`Building raid-readiness card for **${selectedTitle ?? "Pizza Core ICC25"}**…`);
@@ -480,9 +475,9 @@ client.on("interactionCreate", async (interaction) => {
       });
     } catch (error) {
       console.error("Raid readiness lookup failed", error);
-      await interaction.editReply(error instanceof CoreRoleRosterError
+      await interaction.editReply(error instanceof CoreRoleRosterError || error instanceof RaidHelperDiscoveryError
         ? error.message
-        : "I could not read that Raid-Helper event. Paste the event's Discord message link or copied event ID, then try again.");
+        : "I could not read that Raid-Helper event. Paste the event's Discord forum post link or copied event ID, then try again.");
     }
     return;
   }
