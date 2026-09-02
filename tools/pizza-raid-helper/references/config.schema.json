@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Pizza Raid Helper local configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "guildId",
+    "forumChannelId",
+    "raidHelperBotUserId",
+    "timeZone",
+    "credentials",
+    "defaults",
+    "raidTypes"
+  ],
+  "properties": {
+    "guildId": { "$ref": "#/$defs/snowflake" },
+    "forumChannelId": { "$ref": "#/$defs/snowflake" },
+    "raidHelperBotUserId": { "$ref": "#/$defs/snowflake" },
+    "timeZone": { "type": "string", "minLength": 1 },
+    "credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["raidHelperApiKeyEnv", "discordTokenEnv"],
+      "properties": {
+        "raidHelperApiKeyEnv": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" },
+        "discordTokenEnv": { "type": "string", "pattern": "^[A-Z_][A-Z0-9_]*$" }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leaderId"],
+      "properties": {
+        "leaderId": { "$ref": "#/$defs/snowflake" },
+        "description": { "type": "string" }
+      }
+    },
+    "pizzaCoreRole": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "confirmed"],
+      "properties": {
+        "id": { "$ref": "#/$defs/snowflake" },
+        "name": { "type": "string", "minLength": 1 },
+        "confirmed": { "type": "boolean" }
+      }
+    },
+    "raidTypes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["BrotherRaid", "PizzaRaid", "CasualRaid"],
+      "properties": {
+        "BrotherRaid": { "$ref": "#/$defs/raidType" },
+        "PizzaRaid": { "$ref": "#/$defs/raidType" },
+        "CasualRaid": { "$ref": "#/$defs/raidType" }
+      }
+    }
+  },
+  "$defs": {
+    "snowflake": {
+      "type": "string",
+      "pattern": "^[0-9]{16,22}$"
+    },
+    "raidType": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["templateId"],
+      "properties": {
+        "templateId": { "type": "string", "minLength": 1 },
+        "advancedSettings": { "type": "object" }
+      }
+    }
+  }
+}

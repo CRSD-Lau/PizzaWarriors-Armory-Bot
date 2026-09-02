@@ -35,3 +35,6 @@ jobs:
 
       - name: Audit production dependencies
         run: npm audit --omit=dev
+
+      - name: Test weekly raid workflow and safe example
+        run: npm run test:raid-workflow
