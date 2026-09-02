@@ -1,0 +1,99 @@
+{
+  "version": 1,
+  "seriesId": "pizza-core-icc25",
+  "guildId": "100000000000000001",
+  "forum": {
+    "id": "100000000000000002",
+    "name": "raid-signups"
+  },
+  "managementBotUserId": "100000000000000003",
+  "raidHelperBotUserId": "100000000000000004",
+  "coreRole": {
+    "id": "100000000000000005",
+    "name": "Pizza Core"
+  },
+  "tags": [
+    {
+      "id": "100000000000000006",
+      "name": "PizzaCore"
+    },
+    {
+      "id": "100000000000000007",
+      "name": "Event"
+    }
+  ],
+  "event": {
+    "title": "Pizza Core ICC25",
+    "templateId": "wowwotlk",
+    "leaderId": "100000000000000008",
+    "leaderDisplayName": "Configured raid leader",
+    "description": "Pizza Core: please sign up for this Friday's raid using the class/spec controls below.\n\nPizza Core members sign up normally; other guild members are welcome to sign up on bench. Discussion stays open to everyone who can access this forum until the raid ends.\n\nVoice: <#100000000000000009>",
+    "timeZone": "America/New_York",
+    "weekday": 5,
+    "time": "22:00",
+    "durationMinutes": 240,
+    "roles": [
+      {
+        "name": "Tanks",
+        "cName": "Tanks",
+        "limit": 2,
+        "emoteId": "598989638098747403"
+      },
+      {
+        "name": "Melee",
+        "cName": "Melee",
+        "limit": 8,
+        "emoteId": "734439523328720913"
+      },
+      {
+        "name": "Ranged",
+        "cName": "Ranged",
+        "limit": 10,
+        "emoteId": "592446395596931072"
+      },
+      {
+        "name": "Healers",
+        "cName": "Healers",
+        "limit": 5,
+        "emoteId": "592438128057253898"
+      }
+    ]
+  },
+  "nativeCalendar": {
+    "enabled": true,
+    "voiceChannel": {
+      "id": "100000000000000009",
+      "name": "Raid Chat (Open Mic)"
+    },
+    "startGraceMinutes": 30
+  },
+  "rollover": {
+    "timeZone": "America/Halifax",
+    "weekday": 6,
+    "time": "03:00",
+    "maxLateMinutes": 720
+  },
+  "credentials": {
+    "raidHelperApiKeyEnv": "RAID_HELPER_API_KEY",
+    "discordTokenEnv": "DISCORD_TOKEN"
+  },
+  "statePath": "./runtime/pizza-core-rollover.json",
+  "bootstrap": {
+    "date": "2026-09-04",
+    "eventId": "100000000000000010",
+    "legacyPolicy": true
+  },
+  "activation": {
+    "configHash": null,
+    "rolePolicyCanaryEventId": null,
+    "lifecycleCanaryThreadId": null,
+    "nativeCalendarCanaryEventId": null,
+    "coreSignupVerified": false,
+    "nonCoreBenchVerified": false,
+    "lifecycleVerified": false,
+    "nativeCalendarVerified": false,
+    "nativeCalendarRetryVerified": false,
+    "nativeCalendarLifecycleVerified": false,
+    "verifiedAt": null
+  }
+}

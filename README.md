@@ -1,3 +1,8 @@
+---
+author: Neil Mitchell
+last_modified_by: Neil Mitchell
+---
+
 # PizzaWarriors Armory Bot
 
 <p align="center">
@@ -27,7 +32,8 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Generates a branded PizzaWarriors equipment card with legendary orange GearScore and blue iLvl hierarchy.
 - Includes an **Open Armory** link and a resilient text-embed fallback.
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
-- Compares Raid-Helper responses with the live **Well Timed Pizza** role and can safely ping only current core members who have not responded at all.
+- Compares Raid-Helper responses with the configured **Pizza Core** role and can safely ping only current core members who have not responded at all.
+- Includes a separately scheduled [weekly raid workflow](tools/pizza-raid-helper/references/operations.md): Raid-Helper signup creation, native Discord voice events, 30-minute reminders, and guarded end-of-raid rollover.
 - Privately tracks Pizza Core signup responses week over week for officers without re-opening old Raid-Helper events.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
 - Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
@@ -47,7 +53,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 /upgrade name:Lausudo realm:Lordaeron spec:Fury
 ```
 
-`/ready` finds the current **Pizza Core ICC25** Raid-Helper post in the configured signup channel or forum, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. Forum discovery checks active and recently archived posts, accepts only posts created by Raid-Helper, and uses the **PizzaCore** or **PizzaRaid** forum tag when available. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Well Timed Pizza** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
+`/ready` finds the current **Pizza Core ICC25** Raid-Helper post in the configured signup channel or forum, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. Forum discovery checks active and recently archived posts, accepts only posts created by Raid-Helper, and uses the **PizzaCore** or **PizzaRaid** forum tag when available. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Pizza Core** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
 
 `/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Every Pizza Core `/ready` run creates or refreshes one snapshot per Raid-Helper event ID. Missing means no signup existed anywhere in that event; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
 
@@ -63,7 +69,7 @@ Supported realms are **Lordaeron**, **Icecrown**, and **Blackrock**. The configu
 - Google Chrome (used in headless mode to render the card without opening terminal windows)
 - A Discord application with a bot token and application ID
 
-The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. Role-backed core tracking additionally requires **Server Members Intent** to be enabled for the application so the bot can call Discord's member-list endpoint on demand. The client does not subscribe to member gateway events, monitor messages, or require a Raid-Helper API key. Core reminders and private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
+The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. Role-backed core tracking additionally requires **Server Members Intent** to be enabled for the application so the bot can call Discord's member-list endpoint on demand. The client does not subscribe to member gateway events or monitor messages. Ordinary armory/readiness commands do not require a Raid-Helper API key; the optional weekly raid publisher does. Manual core reminders and private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
 
 ## Quick start
 
@@ -87,11 +93,13 @@ DISCORD_CLIENT_ID=your-application-id
 
 Set `RAID_HELPER_CHANNEL_ID` to the Discord **forum channel ID** containing the weekly Raid-Helper posts (or a legacy text-channel ID). This lets plain `/ready` select the nearest current or upcoming **Pizza Core ICC25** event and prevents a completed saved event or an unrelated forum post from being silently reused.
 
-Set `PIZZA_CORE_ROLE_ID` to the **Well Timed Pizza** role ID and enable **Server Members Intent** on the application's **Bot** page in Discord's Developer Portal. Role membership then becomes the live source of truth for `/ready`, reminders, and the current-core attendance view.
+Set `PIZZA_CORE_ROLE_ID` to the **Pizza Core** role ID and enable **Server Members Intent** on the application's **Bot** page in Discord's Developer Portal. Role membership then becomes the live source of truth for `/ready`, manual reminders, and the current-core attendance view.
 
 See [`.env.example`](.env.example) for the complete configuration reference. Never commit `.env`, a Discord token, or `WARMANE_COOKIE`.
 
 ## Production operation
+
+The optional weekly publisher is versioned under [`tools/pizza-raid-helper`](tools/pizza-raid-helper/SKILL.md). It uses a separate Windows task and the same bot identity; it is not started by `npm start` or the Armory service installer below. Its committed profile contains synthetic IDs and no activation. See [setup, ownership, and recovery](tools/pizza-raid-helper/references/operations.md). Publishing or pulling this source does not migrate an existing installed scheduler or authorize a second one.
 
 Production uses one persistent Windows Task Scheduler process. Run the installer
 once from Administrator PowerShell; it removes the obsolete PM2 watchdog and

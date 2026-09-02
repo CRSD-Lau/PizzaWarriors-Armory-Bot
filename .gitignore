@@ -1,6 +1,16 @@
 node_modules/
 dist/
 .env
+.env.*
+!.env.example
+*.bundle
+/runtime/
+/tools/pizza-raid-helper/runtime/
+/tools/pizza-raid-helper/*.local.json
+/tools/pizza-raid-helper/config.json
+/tools/pizza-raid-helper/**/*.lock
+/tools/pizza-raid-helper/**/*.scheduler-status.json
+/tools/pizza-raid-helper/**/*.audience.json
 .cache/
 playwright/.cache/
 *.log

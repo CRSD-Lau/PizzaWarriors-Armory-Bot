@@ -1,0 +1,4 @@
+interface:
+  display_name: "Pizza Raid Helper"
+  short_description: "Manage Pizza Core signups, reminders, and voice events"
+  default_prompt: "Use $pizza-raid-helper to preview the next Pizza Core signup post, attendee and unsigned-Core reminders, native voice event, and weekly workflow without creating anything."

@@ -21,6 +21,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test:raid-workflow": "node --test tools/pizza-raid-helper/scripts/*.test.mjs",
     "test": "tsx tests/gearscore.test.ts && tsx tests/score-tiers.test.ts && tsx tests/character.test.ts && tsx tests/gear-audit.test.ts && tsx tests/browser-recovery.test.ts && tsx tests/upgrade.test.ts && tsx tests/sheet-upgrades.test.ts && tsx tests/ready.test.ts && tsx tests/raid-helper-discovery.test.ts && tsx tests/core-roster.test.ts && tsx tests/core-role.test.ts && tsx tests/core-attendance.test.ts && tsx tests/guild.test.ts"
   },
   "dependencies": {
