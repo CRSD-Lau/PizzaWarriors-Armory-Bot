@@ -42,3 +42,14 @@ jobs:
 
       - name: Test weekly raid workflow and safe example
         run: npm run test:raid-workflow
+
+  required-validation:
+    name: Validate Node 24 project
+    needs: validate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both platform validations
+        env:
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+        run: test "$VALIDATION_RESULT" = "success"
