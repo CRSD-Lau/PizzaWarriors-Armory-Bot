@@ -1,16 +1,12 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
 import { auditGearPreparation, type GearPreparationAudit } from "./gear-audit.js";
 import { calculateGearScore, type GearScoreSummary } from "./gearscore.js";
 import { WarmaneArmory, type ArmoryCharacter } from "./armory.js";
+import { isPizzaCoreEventTitle, type RaiderLinks } from "./raider-state.js";
+export { isPizzaCoreEventTitle, RaiderLinks, RecentReadyEvents, type RaiderLink, type RecentReadyEvent } from "./raider-state.js";
 
 const RAID_HELPER_API = "https://raid-helper.xyz/api/v4/events";
-const LINKS_FILE = join(process.cwd(), "data", "raider-links.json");
-const RECENT_EVENTS_FILE = join(process.cwd(), "data", "recent-ready-events.json");
-const CORE_EVENT_KEY = "pizzacoreicc25";
 const CURRENT_EVENT_GRACE_MS = 18 * 60 * 60 * 1_000;
 
-export type RaiderLink = { name: string; realm: string };
 export type RaidAttendance = "Signed" | "Late" | "Tentative" | "Bench" | "Absent";
 export type RaidRole = "Tanks" | "Healers" | "Melee" | "Ranged";
 export type RaidSignup = { discordUserId: string; displayName: string; reportedClass?: string; reportedSpec?: string; reportedRole?: RaidRole; status: RaidAttendance };
@@ -22,22 +18,20 @@ export type ReadyMember = {
   specName?: string;
   summary: GearScoreSummary;
   preparation: GearPreparationAudit;
+  freshness?: ArmoryCharacter["freshness"];
   armoryUrl: string;
 };
 export type ReadyReport = {
   eventId: string;
   eventTitle: string;
   eventStartsAt?: number;
+  eventGuildId?: string;
   signups: RaidSignup[];
   activeSignups: RaidSignup[];
   members: ReadyMember[];
   unresolved: Array<{ signup: RaidSignup; reason: string }>;
 };
-export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; signups: RaidSignup[] };
-
-type LinkStore = Record<string, RaiderLink>;
-export type RecentReadyEvent = { eventId: string; title: string; usedAt: number };
-type RecentEventStore = Record<string, RecentReadyEvent[]>;
+export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; guildId?: string; signups: RaidSignup[] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -171,14 +165,15 @@ export function eventIdFromInput(value: string): string | undefined {
   return matches.at(-1)?.[0];
 }
 
-export function isPizzaCoreEventTitle(title: string): boolean {
-  return title.toLowerCase().replace(/[^a-z0-9]+/g, "").includes(CORE_EVENT_KEY);
-}
-
 export function isCurrentPizzaCoreEvent(event: Pick<RaidHelperEvent, "title" | "startsAt">, now = Date.now()): boolean {
   return isPizzaCoreEventTitle(event.title)
     && event.startsAt !== undefined
     && event.startsAt >= now - CURRENT_EVENT_GRACE_MS;
+}
+
+/** Public event titles are not proof of server ownership. Core actions fail closed. */
+export function isCurrentGuildCoreEvent(event: Pick<RaidHelperEvent, "title" | "startsAt" | "guildId">, guildId: string, now = Date.now()): boolean {
+  return event.guildId === guildId && /^\d{16,22}$/.test(guildId) && isCurrentPizzaCoreEvent(event, now);
 }
 
 export function selectCurrentPizzaCoreEvent(events: readonly RaidHelperEvent[], now = Date.now()): RaidHelperEvent | undefined {
@@ -197,73 +192,9 @@ export async function getRaidHelperEvent(value: string): Promise<RaidHelperEvent
   if (!isRecord(payload)) throw new Error("Raid-Helper returned an unexpected event response.");
   const title = firstText(payload, ["title", "name", "event_name", "eventName"]) ?? "Raid readiness";
   const startsAt = firstTimestamp(payload, ["startTime", "start_time", "startsAt", "starts_at"]);
-  return { eventId, title, ...(startsAt ? { startsAt } : {}), signups: parseRaidHelperSignups(payload) };
-}
-
-export class RaiderLinks {
-  private store?: LinkStore;
-
-  private async load(): Promise<LinkStore> {
-    if (this.store) return this.store;
-    try { this.store = JSON.parse(await readFile(LINKS_FILE, "utf8")) as LinkStore; }
-    catch { this.store = {}; }
-    return this.store;
-  }
-
-  async get(guildId: string, discordUserId: string): Promise<RaiderLink | undefined> {
-    return (await this.load())[`${guildId}:${discordUserId}`];
-  }
-
-  async set(guildId: string, discordUserId: string, link: RaiderLink): Promise<void> {
-    const store = await this.load();
-    store[`${guildId}:${discordUserId}`] = link;
-    await mkdir(dirname(LINKS_FILE), { recursive: true });
-    await writeFile(LINKS_FILE, JSON.stringify(store, null, 2));
-  }
-
-  async remove(guildId: string, discordUserId: string): Promise<boolean> {
-    const store = await this.load();
-    const key = `${guildId}:${discordUserId}`;
-    if (!store[key]) return false;
-    delete store[key];
-    await mkdir(dirname(LINKS_FILE), { recursive: true });
-    await writeFile(LINKS_FILE, JSON.stringify(store, null, 2));
-    return true;
-  }
-}
-
-/** Remembers a small, per-guild event list for `/ready` and autocomplete. */
-export class RecentReadyEvents {
-  private store?: RecentEventStore;
-
-  private async load(): Promise<RecentEventStore> {
-    if (this.store) return this.store;
-    try { this.store = JSON.parse(await readFile(RECENT_EVENTS_FILE, "utf8")) as RecentEventStore; }
-    catch { this.store = {}; }
-    return this.store;
-  }
-
-  private isCoreEvent(event: Pick<RecentReadyEvent, "title">): boolean {
-    return isPizzaCoreEventTitle(event.title);
-  }
-
-  async core(guildId: string): Promise<RecentReadyEvent | undefined> {
-    return (await this.load())[guildId]?.find((event) => this.isCoreEvent(event));
-  }
-
-  async listCore(guildId: string): Promise<RecentReadyEvent[]> {
-    return ((await this.load())[guildId] ?? []).filter((event) => this.isCoreEvent(event));
-  }
-
-  /** Other Raid-Helper events must never replace the Pizza Core default. */
-  async rememberCore(guildId: string, event: Pick<RecentReadyEvent, "eventId" | "title">): Promise<void> {
-    if (!this.isCoreEvent(event)) return;
-    const store = await this.load();
-    const previous = store[guildId] ?? [];
-    store[guildId] = [{ ...event, usedAt: Date.now() }, ...previous.filter((entry) => entry.eventId !== event.eventId)].slice(0, 12);
-    await mkdir(dirname(RECENT_EVENTS_FILE), { recursive: true });
-    await writeFile(RECENT_EVENTS_FILE, JSON.stringify(store, null, 2));
-  }
+  const rawGuildId = firstText(payload, ["serverId", "server_id", "guildId", "guild_id"]);
+  const guildId = rawGuildId && /^\d{16,22}$/.test(rawGuildId) ? rawGuildId : undefined;
+  return { eventId, title, ...(startsAt ? { startsAt } : {}), ...(guildId ? { guildId } : {}), signups: parseRaidHelperSignups(payload) };
 }
 
 async function concurrentMap<T, R>(items: readonly T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {
@@ -278,8 +209,10 @@ async function concurrentMap<T, R>(items: readonly T[], limit: number, worker: (
   return results;
 }
 
-export async function buildReadyReport(input: { event: string; realm: string; guildId: string; armory: WarmaneArmory; links: RaiderLinks }): Promise<ReadyReport> {
-  const event = await getRaidHelperEvent(input.event);
+export async function buildReadyReport(input: { event: string | RaidHelperEvent; realm: string; guildId: string; armory: WarmaneArmory; links: RaiderLinks }): Promise<ReadyReport> {
+  // Discovery has already fetched the selected event. Reuse that exact signup
+  // snapshot so one command cannot mix two different versions of the event.
+  const event = typeof input.event === "string" ? await getRaidHelperEvent(input.event) : input.event;
   // Bench, tentative, and absent members are intentionally retained in the
   // report, but are not sent through Armory just to calculate raid readiness.
   // Late attendees remain in the live roster because they are still committed.
@@ -304,7 +237,11 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
       }
       const summary = calculateGearScore(character.items);
       if (!summary) throw new Error("insufficient equipped-item data");
-      return { kind: "member" as const, member: { signup, characterName, className: signup.reportedClass ?? character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, preparation: character.gearAudit ?? auditGearPreparation(character.items), armoryUrl: character.armoryUrl } };
+      const audit = character.gearAudit ?? auditGearPreparation(character.items, [], character.className);
+      // Old gear remains useful when Warmane is unavailable, but is not proof
+      // that a raider currently meets the gem/enchant requirement.
+      const preparation: GearPreparationAudit = character.freshness?.stale ? { ...audit, status: "unverified" } : audit;
+      return { kind: "member" as const, member: { signup, characterName, className: signup.reportedClass ?? character.className, specName: signup.reportedSpec ?? "No event spec selected", summary, preparation, freshness: character.freshness, armoryUrl: character.armoryUrl } };
     } catch (error) {
       return { kind: "unresolved" as const, unresolved: { signup, reason: error instanceof Error ? error.message : "armory lookup failed" } };
     }
@@ -313,6 +250,7 @@ export async function buildReadyReport(input: { event: string; realm: string; gu
     eventId: event.eventId,
     eventTitle: event.title,
     ...(event.startsAt ? { eventStartsAt: event.startsAt } : {}),
+    ...(event.guildId ? { eventGuildId: event.guildId } : {}),
     signups: event.signups,
     activeSignups,
     members: results.filter((result): result is Extract<typeof result, { kind: "member" }> => result.kind === "member").map((result) => result.member),

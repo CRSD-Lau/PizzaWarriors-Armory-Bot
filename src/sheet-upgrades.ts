@@ -1,4 +1,5 @@
 import type { UpgradeProfile, UpgradeTarget } from "./upgrade.js";
+import { AsyncTtlCache } from "./async-cache.js";
 
 const SPREADSHEET_ID = "1i5CFTZ8kIrISQzvNmJHx85smAYlkaCTO9q_UcsrcqqE";
 const CACHE_AGE_MS = 5 * 60 * 1_000;
@@ -44,7 +45,7 @@ const sheetSpecs: readonly SheetSpec[] = [
 
 const slotMap: Record<string, string> = { Head: "Head", Neck: "Neck", Shoulders: "Shoulder", Cape: "Back", Chest: "Chest", Wrist: "Wrist", Hands: "Hands", Belt: "Waist", Legs: "Legs", Feet: "Feet", "Ring 1": "Ring 1", "Ring 2": "Ring 2", "Trinket 1": "Trinket 1", "Trinket 2": "Trinket 2", Weapon: "Main Hand", "Offhand/Shield": "Off Hand", Relic: "Ranged" };
 const slotIcons: Record<string, string> = { Head: "inv_helmet_154", Neck: "inv_jewelry_necklace_48", Shoulder: "inv_shoulder_117", Back: "inv_misc_cape_19", Chest: "inv_chest_plate22", Wrist: "inv_bracer_43", Hands: "inv_gauntlets_85", Waist: "inv_belt_63", Legs: "inv_pants_plate_33", Feet: "inv_boots_plate_12", "Ring 1": "inv_jewelry_ring_84", "Ring 2": "inv_jewelry_ring_84", "Trinket 1": "inv_jewelry_trinket_04", "Trinket 2": "inv_jewelry_trinket_04", "Main Hand": "inv_sword_153", "Off Hand": "inv_shield_75", Ranged: "inv_relics_libramofhope" };
-const csvCache = new Map<number, { expiresAt: number; rows: string[][] }>();
+const csvCache = new AsyncTtlCache<number, string[][]>(CACHE_AGE_MS, 16);
 
 export const upgradeSpecNames = [...new Set(sheetSpecs.map((spec) => spec.selection))];
 
@@ -75,14 +76,13 @@ function parseCsv(text: string): string[][] {
 }
 
 async function getRows(gid: number): Promise<string[][]> {
-  const cached = csvCache.get(gid);
-  if (cached && cached.expiresAt > Date.now()) return cached.rows;
+  return csvCache.get(gid, async () => {
   const url = `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:csv&gid=${gid}`;
   const response = await fetch(url, { headers: { accept: "text/csv", "user-agent": "PizzaWarriorsArmoryBot/1.0 (+Google Sheets upgrade source)" }, signal: AbortSignal.timeout(15_000) });
   if (!response.ok) throw new Error(`Google Sheets returned ${response.status}.`);
   const rows = parseCsv(await response.text());
-  csvCache.set(gid, { rows, expiresAt: Date.now() + CACHE_AGE_MS });
   return rows;
+  });
 }
 
 function matchesFor(value: string): string[] {

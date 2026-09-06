@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { JsonStore } from "./json-store.js";
 import type {
   CoreRosterAudit,
   CoreRosterMember,
@@ -89,7 +89,7 @@ function parseEvent(value: unknown): CoreAttendanceEvent | undefined {
   const seen = new Set<string>();
   const entries = value.entries.flatMap((rawEntry) => {
     const entry = parseEntry(rawEntry);
-    if (!entry || seen.has(entry.discordUserId)) return [];
+    if (!entry || seen.has(entry.discordUserId)) throw new Error("Invalid attendance member entry.");
     seen.add(entry.discordUserId);
     return [entry];
   });
@@ -105,21 +105,17 @@ function parseEvent(value: unknown): CoreAttendanceEvent | undefined {
 }
 
 function parseStore(value: unknown): CoreAttendanceFile {
-  if (!isRecord(value) || !isRecord(value.guilds)) return emptyStore();
-  const guilds: CoreAttendanceFile["guilds"] = {};
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.guilds)) throw new Error("Invalid attendance schema.");
   for (const [guildId, rawGuild] of Object.entries(value.guilds)) {
-    if (!validDiscordId(guildId) || !isRecord(rawGuild) || !Array.isArray(rawGuild.events)) continue;
+    if (!validDiscordId(guildId) || !isRecord(rawGuild) || !Array.isArray(rawGuild.events)) throw new Error("Invalid attendance guild.");
     const seen = new Set<string>();
-    const events = rawGuild.events.flatMap((rawEvent) => {
+    for (const rawEvent of rawGuild.events) {
       const event = parseEvent(rawEvent);
-      if (!event || seen.has(event.eventId)) return [];
+      if (!event || seen.has(event.eventId)) throw new Error("Invalid attendance event.");
       seen.add(event.eventId);
-      return [event];
-    }).sort((left, right) => right.startsAt - left.startsAt || right.capturedAt - left.capturedAt)
-      .slice(0, MAX_STORED_EVENTS);
-    guilds[guildId] = { events };
+    }
   }
-  return { version: 1, guilds };
+  return value as CoreAttendanceFile;
 }
 
 function countStatus(statuses: ReadonlyArray<CoreRosterStatus | undefined>, status: CoreRosterStatus): number {
@@ -170,34 +166,19 @@ export function buildCoreAttendanceHistory(
 
 /** Private local history keyed by Discord guild and Raid-Helper event ID. */
 export class CoreAttendanceStore {
-  private store?: CoreAttendanceFile;
-  private writeQueue: Promise<void> = Promise.resolve();
+  private readonly store: JsonStore<CoreAttendanceFile>;
 
-  constructor(private readonly filePath = DEFAULT_STORE_FILE) {}
-
-  private async load(): Promise<CoreAttendanceFile> {
-    if (this.store) return this.store;
-    try { this.store = parseStore(JSON.parse(await readFile(this.filePath, "utf8")) as unknown); }
-    catch { this.store = emptyStore(); }
-    return this.store;
-  }
-
-  private async persist(): Promise<void> {
-    const store = await this.load();
-    this.writeQueue = this.writeQueue.catch(() => undefined).then(async () => {
-      await mkdir(dirname(this.filePath), { recursive: true });
-      await writeFile(this.filePath, JSON.stringify(store, null, 2));
-    });
-    await this.writeQueue;
+  constructor(filePath = DEFAULT_STORE_FILE) {
+    this.store = new JsonStore(filePath, parseStore, emptyStore);
   }
 
   async list(guildId: string, limit = MAX_STORED_EVENTS): Promise<CoreAttendanceEvent[]> {
-    const events = (await this.load()).guilds[guildId]?.events ?? [];
+    const events = (await this.store.read()).guilds[guildId]?.events ?? [];
     return events.slice(0, Math.min(Math.max(Math.trunc(limit), 1), MAX_STORED_EVENTS));
   }
 
   async hasEvent(guildId: string, eventId: string): Promise<boolean> {
-    return (await this.load()).guilds[guildId]?.events.some((event) => event.eventId === eventId) ?? false;
+    return (await this.store.read()).guilds[guildId]?.events.some((event) => event.eventId === eventId) ?? false;
   }
 
   async record(input: {
@@ -223,14 +204,14 @@ export class CoreAttendanceStore {
         status: entry.status,
       })),
     };
-    const store = await this.load();
-    const previous = store.guilds[input.guildId]?.events ?? [];
-    store.guilds[input.guildId] = {
-      events: [event, ...previous.filter((entry) => entry.eventId !== event.eventId)]
-        .sort((left, right) => right.startsAt - left.startsAt || right.capturedAt - left.capturedAt)
-        .slice(0, MAX_STORED_EVENTS),
-    };
-    await this.persist();
-    return event;
+    return this.store.update((store) => {
+      const previous = store.guilds[input.guildId]?.events ?? [];
+      store.guilds[input.guildId] = {
+        events: [event, ...previous.filter((entry) => entry.eventId !== event.eventId)]
+          .sort((left, right) => right.startsAt - left.startsAt || right.capturedAt - left.capturedAt)
+          .slice(0, MAX_STORED_EVENTS),
+      };
+      return event;
+    });
   }
 }

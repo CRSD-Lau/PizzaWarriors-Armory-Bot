@@ -1,3 +1,8 @@
+---
+author: Neil Mitchell
+last_modified_by: Neil Mitchell
+---
+
 # Changelog
 
 All notable changes to PizzaWarriors Armory Bot are documented here.
@@ -22,6 +27,15 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 - Standardized every generated card at 3× device resolution for clearer Discord previews and full-size viewing.
 
 ### Fixed
+
+- Made private JSON persistence transactional and atomic; corrupt or incompatible saved files are preserved rather than replaced with empty data.
+- Corrected stale item metadata overriding fresh values, long-lived incomplete cache entries, and missing one-hand/shirt/tabard metadata parsing.
+- Bounded and coalesced source caches; stale summary fallback now remains visibly unverified on readiness cards.
+- Contained Discord interaction failures, acknowledged roster paging before slow work, and added Unicode-safe paging buttons.
+- Prevented historical/foreign-server raids from changing core history or enabling reminders; reminder reservations now precede sends.
+- Centralized card capture/context cleanup while retaining 3× resolution and existing layouts.
+- Made the legacy installer refuse unverified process-tree shutdown and fixed repository scheduler retries for transient GET failures without retrying uncertain mutations.
+- Expanded automatically discovered bot regression tests and Windows/Linux CI coverage.
 
 - Made `/ready` class colors follow Raid-Helper's selected class even when that signup's Armory gear profile is unavailable.
 - Sent `/armory`, `/upgrade`, and `/roster` cards as direct image attachments instead of nesting them inside Discord image embeds.

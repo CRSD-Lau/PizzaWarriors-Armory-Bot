@@ -1,3 +1,5 @@
+import { AsyncTtlCache } from "./async-cache.js";
+
 export type GuildMember = {
   name: string;
   race: string;
@@ -20,7 +22,7 @@ export type GuildRoster = {
 };
 
 const CACHE_AGE_MS = 5 * 60 * 1_000;
-const cache = new Map<string, { expiresAt: number; roster: GuildRoster }>();
+const cache = new AsyncTtlCache<string, GuildRoster>(CACHE_AGE_MS, 100);
 
 function decodeHtml(value: string): string {
   const text = value.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -35,7 +37,6 @@ function cellImages(html: string): string[] {
 function memberFromRow(html: string): GuildMember | undefined {
   const cells = [...html.matchAll(/<td\b[^>]*>([\s\S]*?)<\/td>/gi)].map((match) => match[1]);
   if (cells.length < 7) return undefined;
-  const name = decodeHtml(cells[0]).replace(/\s+(Captain|Leader)$/i, "").trim();
   const anchorName = cells[0].match(/<a\b[^>]*>([^<]+)<\/a>/i)?.[1];
   const className = cellImages(cells[2])[0];
   if (!anchorName || !className) return undefined;
@@ -88,12 +89,13 @@ export function parseGuildRoster(html: string, requestedGuildName: string, realm
 }
 
 export async function getGuildRoster(guildName: string, realm: string): Promise<GuildRoster> {
+  guildName = guildName.trim();
+  realm = realm.trim();
   const cacheKey = `${realm.toLowerCase()}:${guildName.toLowerCase()}`;
-  const cached = cache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) return cached.roster;
+  return cache.get(cacheKey, async () => {
   const response = await fetch(guildArmoryUrl(guildName, realm), { headers: { accept: "text/html", "user-agent": "PizzaWarriorsArmoryBot/1.0 (+Discord guild roster)" }, signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`Warmane returned ${response.status} for that guild.`);
   const roster = parseGuildRoster(await response.text(), guildName, realm);
-  cache.set(cacheKey, { roster, expiresAt: Date.now() + CACHE_AGE_MS });
   return roster;
+  });
 }

@@ -12,8 +12,12 @@ permissions:
 
 jobs:
   validate:
-    name: Validate Node 24 project
-    runs-on: ubuntu-latest
+    name: Validate Node 24 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out source
         uses: actions/checkout@v7
@@ -30,7 +34,7 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
-      - name: Run GearScore compatibility tests
+      - name: Run compatibility and reliability tests
         run: npm test
 
       - name: Audit production dependencies
@@ -38,3 +42,14 @@ jobs:
 
       - name: Test weekly raid workflow and safe example
         run: npm run test:raid-workflow
+
+  required-validation:
+    name: Validate Node 24 project
+    needs: validate
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require both platform validations
+        env:
+          VALIDATION_RESULT: ${{ needs.validate.result }}
+        run: test "$VALIDATION_RESULT" = "success"
