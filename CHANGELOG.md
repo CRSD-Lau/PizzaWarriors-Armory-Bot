@@ -9,8 +9,11 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-06
+
 ### Added
 
+- Optional weekly Raid-Helper publication and Windows scheduling source with sanitized configuration, duplicate prevention, reconciliation, and failure/retry safeguards.
 - Officer-invoked Pizza Core roster snapshots from directly mentioned Discord members.
 - `/ready` comparison of core members across signed, late, tentative, bench, absent, and missing states.
 - Targeted reminders only for core members with no event response, with exact user allowlists and duplicate-ping protection.
@@ -46,6 +49,14 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 - Kept the bot on the `Guilds` intent by using a deliberate message context command instead of monitoring channel content.
 - Restricted core-roster configuration and reminders to event/server managers.
 - Restricted attendance history through command visibility, runtime permission checks, ephemeral replies, and an ignored host-local data file.
+
+### Upgrade notes
+
+- This release includes all guild workflow additions and reliability fixes merged since 1.0.0.
+- Role-backed core lookup requires the configured Pizza Core role and Discord Server Members Intent; the bot continues to subscribe only to the Guilds gateway intent.
+- Production operation uses the single Armory Windows task. Do not enable the obsolete PM2 boot, logon, or repeating recovery tasks alongside it.
+- The optional weekly publisher has a separate installed path, private configuration, and journal. A source release does not update that installation or create another schedule.
+- Keep one writer per private data directory and preserve backups. Corrupt saved files fail closed; historical attendance is not retroactively corrected, and stale gear remains unverified.
 
 ## [1.0.0] - 2026-08-09
 

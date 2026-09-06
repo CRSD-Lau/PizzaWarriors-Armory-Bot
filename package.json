@@ -1,6 +1,6 @@
 {
   "name": "pizzawarriors-armory-bot",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Lean Discord armory and GearScore lookup bot for PizzaWarriors.",
   "author": "Neil Mitchell",
