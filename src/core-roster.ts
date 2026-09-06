@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
+import { JsonStore } from "./json-store.js";
 import type { RaidAttendance, RaidSignup } from "./ready.js";
 
 const DEFAULT_STORE_FILE = join(process.cwd(), "data", "core-rosters.json");
@@ -70,30 +70,35 @@ function validMember(value: unknown): value is CoreRosterMember {
 }
 
 function parseStore(value: unknown): CoreRosterFile {
-  if (!isRecord(value) || !isRecord(value.guilds)) return emptyStore();
-  const guilds: Record<string, GuildCoreState> = {};
+  const invalid = () => { throw new Error("Invalid core roster schema."); };
+  if (!isRecord(value) || value.version !== 1 || !isRecord(value.guilds)) return invalid();
   for (const [guildId, rawState] of Object.entries(value.guilds)) {
-    if (!/^\d{16,22}$/.test(guildId) || !isRecord(rawState)) continue;
+    if (!/^\d{16,22}$/.test(guildId) || !isRecord(rawState)) return invalid();
     const rawRoster = rawState.roster;
-    const state: GuildCoreState = {};
-    if (isRecord(rawRoster)
-      && typeof rawRoster.sourceChannelId === "string"
-      && typeof rawRoster.sourceMessageId === "string"
-      && typeof rawRoster.sourceUrl === "string"
-      && typeof rawRoster.updatedAt === "number"
-      && Array.isArray(rawRoster.members)) {
-      const members = rawRoster.members.filter(validMember);
-      if (members.length) state.roster = { ...rawRoster, members } as CoreRosterSnapshot;
+    if (rawRoster !== undefined) {
+      if (!isRecord(rawRoster)
+        || typeof rawRoster.sourceChannelId !== "string"
+        || !/^\d{16,22}$/.test(rawRoster.sourceChannelId)
+        || typeof rawRoster.sourceMessageId !== "string"
+        || !/^\d{16,22}$/.test(rawRoster.sourceMessageId)
+        || typeof rawRoster.sourceUrl !== "string"
+        || !rawRoster.sourceUrl.trim()
+        || typeof rawRoster.updatedAt !== "number"
+        || !Number.isFinite(rawRoster.updatedAt)
+        || !Array.isArray(rawRoster.members)
+        || !rawRoster.members.length
+        || !rawRoster.members.every(validMember)) return invalid();
     }
-    if (isRecord(rawState.lastPings)) {
-      state.lastPings = Object.fromEntries(Object.entries(rawState.lastPings).flatMap(([eventId, rawPing]) => {
-        if (!/^\d{16,22}$/.test(eventId) || !isRecord(rawPing) || typeof rawPing.fingerprint !== "string" || typeof rawPing.sentAt !== "number") return [];
-        return [[eventId, { fingerprint: rawPing.fingerprint, sentAt: rawPing.sentAt }]];
-      }));
+    if (rawState.lastPings !== undefined) {
+      if (!isRecord(rawState.lastPings)) return invalid();
+      for (const [eventId, rawPing] of Object.entries(rawState.lastPings)) {
+        if (!/^\d{16,22}$/.test(eventId) || !isRecord(rawPing)
+          || typeof rawPing.fingerprint !== "string" || typeof rawPing.sentAt !== "number"
+          || !Number.isFinite(rawPing.sentAt)) return invalid();
+      }
     }
-    guilds[guildId] = state;
   }
-  return { version: 1, guilds };
+  return value as CoreRosterFile;
 }
 
 function entriesForStatus(entries: CoreRosterAuditEntry[], status: CoreRosterStatus): CoreRosterAuditEntry[] {
@@ -156,29 +161,14 @@ export function coreReminderText(audit: CoreRosterAudit): string {
 
 /** Small local store for one roster snapshot and per-event ping cooldowns. */
 export class CoreRosterStore {
-  private store?: CoreRosterFile;
-  private writeQueue: Promise<void> = Promise.resolve();
+  private readonly store: JsonStore<CoreRosterFile>;
 
-  constructor(private readonly filePath = DEFAULT_STORE_FILE) {}
-
-  private async load(): Promise<CoreRosterFile> {
-    if (this.store) return this.store;
-    try { this.store = parseStore(JSON.parse(await readFile(this.filePath, "utf8")) as unknown); }
-    catch { this.store = emptyStore(); }
-    return this.store;
-  }
-
-  private async persist(): Promise<void> {
-    const store = await this.load();
-    this.writeQueue = this.writeQueue.catch(() => undefined).then(async () => {
-      await mkdir(dirname(this.filePath), { recursive: true });
-      await writeFile(this.filePath, JSON.stringify(store, null, 2));
-    });
-    await this.writeQueue;
+  constructor(filePath = DEFAULT_STORE_FILE) {
+    this.store = new JsonStore(filePath, parseStore, emptyStore);
   }
 
   async getRoster(guildId: string): Promise<CoreRosterSnapshot | undefined> {
-    return (await this.load()).guilds[guildId]?.roster;
+    return (await this.store.read()).guilds[guildId]?.roster;
   }
 
   async setRoster(guildId: string, input: Omit<CoreRosterSnapshot, "updatedAt">, now = Date.now()): Promise<CoreRosterSnapshot> {
@@ -192,24 +182,24 @@ export class CoreRosterStore {
       .map((member) => ({ discordUserId: member.discordUserId, displayName: member.displayName.trim() || member.discordUserId }));
     if (!members.length) throw new Error("The roster message must mention at least one Discord member.");
     const roster = { ...input, members, updatedAt: now };
-    const store = await this.load();
-    const previous = store.guilds[guildId];
-    store.guilds[guildId] = { roster, lastPings: previous?.lastPings ?? {} };
-    await this.persist();
-    return roster;
+    return this.store.update((store) => {
+      const previous = store.guilds[guildId];
+      store.guilds[guildId] = { roster, lastPings: previous?.lastPings ?? {} };
+      return roster;
+    });
   }
 
   async recentMatchingPing(guildId: string, eventId: string, fingerprint: string, now = Date.now()): Promise<CorePingRecord | undefined> {
-    const ping = (await this.load()).guilds[guildId]?.lastPings?.[eventId];
+    const ping = (await this.store.read()).guilds[guildId]?.lastPings?.[eventId];
     return ping && ping.fingerprint === fingerprint && now - ping.sentAt < CORE_PING_COOLDOWN_MS ? ping : undefined;
   }
 
   async recordPing(guildId: string, eventId: string, fingerprint: string, now = Date.now()): Promise<void> {
-    const store = await this.load();
-    const state = store.guilds[guildId] ?? {};
-    state.lastPings ??= {};
-    state.lastPings[eventId] = { fingerprint, sentAt: now };
-    store.guilds[guildId] = state;
-    await this.persist();
+    await this.store.update((store) => {
+      const state = store.guilds[guildId] ?? {};
+      state.lastPings ??= {};
+      state.lastPings[eventId] = { fingerprint, sentAt: now };
+      store.guilds[guildId] = state;
+    });
   }
 }

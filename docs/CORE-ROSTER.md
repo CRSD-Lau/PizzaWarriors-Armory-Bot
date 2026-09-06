@@ -1,3 +1,8 @@
+---
+author: Neil Mitchell
+last_modified_by: Neil Mitchell
+---
+
 # Pizza Core roster reminders
 
 The bot can compare the canonical Pizza Core roster with every state in the current Raid-Helper event and safely notify only members who still need attention.
@@ -28,7 +33,7 @@ The response box lists non-core signed players, missing core members, Tentative 
 
 Run `/attendance` to receive a private officer report for the latest eight Pizza Core raids, or set `weeks` from 2 through 12. The command is hidden by default from members without **Manage Events**, checks **Manage Events** or **Manage Server** again at runtime, and always responds ephemerally so the result is visible only to the officer who invoked it.
 
-Every Pizza Core `/ready` run creates or refreshes one saved snapshot keyed by the Raid-Helper event ID. Running `/ready` repeatedly for the same event updates that week instead of creating duplicates. Role-backed mode does not retroactively backfill older raids with today's membership, so newly promoted players are not charged for events before they joined the core.
+Current/upcoming Pizza Core `/ready` runs create or refresh one saved snapshot keyed by the Raid-Helper event ID, after verifying that the event belongs to this Discord server. Running `/ready` repeatedly for the same event updates that week instead of creating duplicates. Neither role mode nor roster-post mode retroactively backfills older raids using today's membership. Explicit historical or foreign-event views do not compare today's core, rewrite saved history, change the default core event, or offer reminder buttons.
 
 The history preserves these meanings:
 
@@ -43,9 +48,12 @@ Raid-Helper signup data cannot prove whether someone who signed actually entered
 - Regular `/ready` requests remain silent and never ping members automatically.
 - Only members with **Manage Events** or **Manage Server** can send the reminder.
 - Discord is given an explicit allowlist containing only the affected user IDs; role, `@here`, and `@everyone` mentions are never enabled.
-- An unchanged reminder cannot be sent again for 30 minutes. A changed signup state creates a new reminder fingerprint immediately.
+- An unchanged reminder cannot be sent again for 30 minutes. Its cooldown is saved before sending; a timeout or failed Discord response may retain that reservation to prevent duplicate pings. Check the channel before retrying. A changed signup state creates a new reminder fingerprint immediately.
+- Old, foreign-server, or unverifiable event buttons fail closed before any current-role audit or ping.
 - Tentative, bench, and absent members are visible in the comparison but are never included in the reminder.
 
 ## Local data
 
 Current role membership is loaded on demand and is not stored as a continuously synchronized guild roster. The optional roster-post link and per-event reminder timestamps are kept only on the bot host in `data/core-rosters.json`. Week-over-week response history stores the exact core membership and signup state captured for each event in `data/core-attendance.json`. Both files are excluded from Git.
+
+All private stores preserve their current file format and use serialized atomic replacement. Invalid JSON, incompatible schemas, and read/write failures leave the previous saved file intact. Stop the bot before manually restoring a backup; do not run multiple writers against the same `data/` directory.

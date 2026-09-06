@@ -27,3 +27,14 @@ test("private deployment artifacts are excluded and absent from tracked workflow
   assert.ok(tracked.length > 0, "Stage the public source before running the packaging check");
   assert.ok(tracked.every(path => !/\.local\.json$|(^|\/)runtime\/|\.env(?:\.|$)|\.(?:log|lock|bundle)$/.test(path)));
 });
+
+test("Armory recovery installer cannot terminate a shared legacy process tree", async () => {
+  const source = await readFile(new URL("../../../scripts/install-boot-recovery.ps1", import.meta.url), "utf8");
+  const guard = source.match(/function Stop-LegacyPm2Tree \{([\s\S]*?)\r?\n\}\r?\n/);
+  assert.ok(guard, "The legacy PID migration guard must remain present.");
+  assert.match(guard[1], /if \(\$RootPid -le 0\) \{ return \}/);
+  assert.match(guard[1], /throw "Legacy PID \$RootPid is still running/);
+  assert.match(guard[1], /stop only pizza-warriors-armory/);
+  assert.doesNotMatch(source, /\btaskkill(?:\.exe)?\b|\bStop-Process\b|\bGet-DescendantProcessIds\b/i);
+  assert.ok(source.indexOf("Stop-LegacyPm2Tree -RootPid") < source.indexOf("foreach ($name in $legacyTaskNames)"), "Refuse an unverified live PID before changing scheduled tasks.");
+});

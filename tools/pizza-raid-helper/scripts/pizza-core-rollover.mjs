@@ -382,7 +382,7 @@ export async function providerRequest(url, { method = "GET", headers = {}, body,
         if (method === "GET" && retry < 2 && retryAfter !== null) continue;
       }
       const reason = typeof payload?.message === "string" ? payload.message : typeof payload?.reason === "string" ? payload.reason : "Request rejected";
-      const error = new SkillError("PROVIDER_HTTP_ERROR", `${new URL(url).hostname} returned HTTP ${response.status}: ${redact(reason).slice(0, 200)}`, { status: response.status, endpoint: new URL(url).pathname, ...(response.status === 429 && retryAfter !== null ? { retryAfterSeconds: retryAfter } : {}) }, response.status >= 500 || response.status === 429 ? 3 : 2);
+      const error = new SkillError("PROVIDER_HTTP_ERROR", `${new URL(url).hostname} returned HTTP ${response.status}: ${redact(reason).slice(0, 200)}`, { method, status: response.status, endpoint: new URL(url).pathname, ...(response.status === 429 && retryAfter !== null ? { retryAfterSeconds: retryAfter } : {}) }, response.status >= 500 || response.status === 429 ? 3 : 2);
       error.status = response.status;
       error.uncertain = response.status >= 500;
       throw error;

@@ -45,55 +45,19 @@ function Backup-ScheduledTaskDefinitions {
   return $backupDir
 }
 
-function Get-DescendantProcessIds {
-  param(
-    [int]$RootPid,
-    [Microsoft.Management.Infrastructure.CimInstance[]]$Processes
-  )
-
-  $found = [Collections.Generic.HashSet[int]]::new()
-  $queue = [Collections.Generic.Queue[int]]::new()
-  $queue.Enqueue($RootPid)
-  while ($queue.Count -gt 0) {
-    $parentPid = $queue.Dequeue()
-    foreach ($child in $Processes | Where-Object { [int]$_.ParentProcessId -eq $parentPid }) {
-      $childPid = [int]$child.ProcessId
-      if ($found.Add($childPid)) { $queue.Enqueue($childPid) }
-    }
-  }
-  return @($found)
-}
-
 function Stop-LegacyPm2Tree {
   param([int]$RootPid)
 
   if ($RootPid -le 0) { return }
 
-  $processes = @(Get-CimInstance Win32_Process)
-  $root = $processes | Where-Object { [int]$_.ProcessId -eq $RootPid } | Select-Object -First 1
+  $root = Get-CimInstance Win32_Process -Filter "ProcessId = $RootPid" | Select-Object -First 1
   if ($null -eq $root) {
     Write-Output "Legacy PM2 root PID $RootPid already exited."
     return
   }
-  if ($root.Name -ine 'node.exe') {
-    throw "Refusing to stop PID $RootPid because it is $($root.Name), not node.exe."
-  }
-
-  $descendants = @(Get-DescendantProcessIds -RootPid $RootPid -Processes $processes)
-  $isPm2Daemon = $root.CommandLine -match '(?i)\\pm2\\lib\\Daemon\.js'
-  $ownsHealthPort = $false
-  try {
-    $listenerPids = @(Get-NetTCPConnection -State Listen -LocalPort $HealthUri.Port -ErrorAction Stop | Select-Object -ExpandProperty OwningProcess)
-    $ownsHealthPort = @($listenerPids | Where-Object { $_ -eq $RootPid -or $descendants -contains [int]$_ }).Count -gt 0
-  } catch {
-    $ownsHealthPort = $false
-  }
-  if (-not $isPm2Daemon -and -not $ownsHealthPort) {
-    throw "Refusing to stop PID $RootPid because it cannot be verified as the PM2 tree or the current health-port owner."
-  }
-
-  & "$env:WINDIR\System32\taskkill.exe" /PID $RootPid /T /F | Out-Host
-  if ($LASTEXITCODE -ne 0) { throw "taskkill failed for legacy PM2 root PID $RootPid (exit $LASTEXITCODE)." }
+  # A PM2 daemon or health-port owner may also manage unrelated applications.
+  # Retain the legacy argument as a migration guard, never as tree-kill authority.
+  throw "Legacy PID $RootPid is still running. This installer will not stop a shared or unverified process tree. Use its process manager to stop only pizza-warriors-armory, verify the health port is free, then rerun without -LegacyPm2RootPid. No processes were stopped."
 }
 
 function Wait-ForHealthyBot {

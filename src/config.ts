@@ -13,6 +13,15 @@ function optionalDiscordId(name: string): string | undefined {
   return value;
 }
 
+function portNumber(): number {
+  const value = process.env.PORT?.trim() || "3000";
+  const port = Number(value);
+  if (!/^\d+$/.test(value) || !Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("PORT must be an integer from 1 to 65535.");
+  }
+  return port;
+}
+
 export const config = {
   discordToken: required("DISCORD_TOKEN"),
   discordClientId: required("DISCORD_CLIENT_ID"),
@@ -22,5 +31,5 @@ export const config = {
   defaultRealm: process.env.WARMANE_DEFAULT_REALM?.trim() || "Lordaeron",
   headless: (process.env.HEADLESS ?? "true").toLowerCase() !== "false",
   warmaneCookie: process.env.WARMANE_COOKIE?.trim() || undefined,
-  port: Number(process.env.PORT || 3000),
+  port: portNumber(),
 };

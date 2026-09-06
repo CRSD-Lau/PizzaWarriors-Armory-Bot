@@ -20,8 +20,10 @@ export function selectPhase(config, at) {
 }
 
 export function retryable(error) {
-  if (error?.uncertain) return false;
-  if (error?.code === "NETWORK_OUTCOME_UNCERTAIN") return error.details?.method === "GET";
+  // A failed read has no uncertain mutation to repeat. Mutations and errors
+  // without an identified HTTP method must remain subject to reconciliation.
+  if (error?.details?.method !== "GET") return false;
+  if (error?.code === "NETWORK_OUTCOME_UNCERTAIN") return true;
   return error?.code === "PROVIDER_HTTP_ERROR" && (error.details?.status === 429 || error.details?.status >= 500);
 }
 

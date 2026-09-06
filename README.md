@@ -29,7 +29,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Posts `/armory name:<character> [realm]` results directly in Discord.
 - Reads equipped slots and item icons from the Warmane Armory.
 - Calculates WotLK 3.3.5a GearScoreLite, including Titan's Grip/two-hand handling.
-- Generates a branded PizzaWarriors equipment card with legendary orange GearScore and blue iLvl hierarchy.
+- Generates branded equipment cards with GearScore tier colors, blue iLvl, and the Armory-reported current specialization.
 - Includes an **Open Armory** link and a resilient text-embed fallback.
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
 - Compares Raid-Helper responses with the configured **Pizza Core** role and can safely ping only current core members who have not responded at all.
@@ -50,12 +50,12 @@ Look up a character with one slash command and receive a mobile-readable equipme
 /attendance weeks:8
 /raider link name:Lausudo realm:Lordaeron
 /roster guild:"Pizza Warriors" realm:Lordaeron
-/upgrade name:Lausudo realm:Lordaeron spec:Fury
+/upgrade name:Lausudo realm:Lordaeron spec:Protection
 ```
 
 `/ready` finds the current **Pizza Core ICC25** Raid-Helper post in the configured signup channel or forum, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. Forum discovery checks active and recently archived posts, accepts only posts created by Raid-Helper, and uses the **PizzaCore** or **PizzaRaid** forum tag when available. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Pizza Core** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
 
-`/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Every Pizza Core `/ready` run creates or refreshes one snapshot per Raid-Helper event ID. Missing means no signup existed anywhere in that event; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
+`/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Current/upcoming Pizza Core `/ready` runs create or refresh one snapshot per verified server-owned event. Inspecting a historical or foreign event cannot rewrite core history or enable reminders. Older weeks without a captured core snapshot are not reconstructed from today's membership. Missing means no signup existed anywhere in that snapshot; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
 
 `/roster` defaults to **Pizza Warriors** on the configured realm. Its Previous and Next controls show ten characters at a time, while **Open Guild Armory** returns to the underlying public roster.
 
@@ -115,8 +115,10 @@ Do not combine this task with a PM2 boot, logon, or repeating watchdog task.
 The PM2 ecosystem file remains available only for deliberate interactive use.
 
 - `GET /healthz` returns `{ "ok": true }` for health probes.
-- Item metadata is cached locally for 30 days in `.cache/items.json` to reduce upstream requests.
-- Lookups are throttled per Discord user and server to protect Warmane and the local renderer.
+- Complete item metadata is cached for 30 days in `.cache/items.json`; incomplete source responses retry after one minute instead of preserving placeholder values for a month.
+- The bot admits one expensive operation per user and four in total. Additional requests receive a private busy response; `/armory` also has a ten-second user/server cooldown.
+- Character summaries cache for five minutes, with bounded six-hour outage fallback. `/ready` labels stale gear and excludes it from freshly verified readiness.
+- Private JSON writes are serialized and atomically replaced. Invalid files fail closed without being overwritten. Keep one bot writer and back up `data/`; atomic writes are not a backup system.
 - If Warmane presents a Cloudflare challenge, `WARMANE_COOKIE` can be set from a browser session you control. Treat it as a password.
 
 ## Architecture
@@ -142,15 +144,17 @@ The bot uses the Warmane armory grid for the equipped position and icon, then en
 ```powershell
 npm run typecheck
 npm test
+npm run test:raid-workflow
+npm run test:cards
 npm audit --omit=dev
 ```
 
-CI runs the same checks on Node 24. Review [the release checklist](docs/RELEASE-CHECKLIST.md) before deploying.
+CI runs the type, regression, workflow, and dependency checks on Node 24 for Windows and Linux. The optional `test:cards` smoke check requires local Chrome and renders all five card types from synthetic fixtures into `.cache/card-smoke`; it does not post to Discord. Review [the release checklist](docs/RELEASE-CHECKLIST.md) and [the September reliability review](docs/REVIEW-2026-09-06.md) before deploying.
 
 ## Security and privacy
 
 - Secrets, runtime cache, and logs are excluded from Git.
-- Rendered item-icon URLs are limited to HTTPS Warmane hosts.
+- Rendered item-icon URLs are limited to HTTPS Warmane hosts and `wow.zamimg.com`.
 - Character and item text is escaped before card rendering.
 - No general Discord message content, voice activity, or gameplay attendance is stored.
 - The configured core role is fetched only when `/ready`, `/attendance`, or an officer reminder needs it; the bot does not subscribe to guild-member gateway events.

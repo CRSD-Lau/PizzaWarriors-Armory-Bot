@@ -94,9 +94,9 @@ async function verifyReadyReportUsesEventNameAndSpec(): Promise<void> {
     },
   } as unknown as WarmaneArmory;
   const links = new RaiderLinks();
-  (links as unknown as { store: Record<string, { name: string; realm: string }> }).store = {
-    "guild:123456789012345699": { name: "FallbackCharacter", realm: "Icecrown" },
-  };
+  links.get = async (guildId, discordUserId) => guildId === "guild" && discordUserId === "123456789012345699"
+    ? { name: "FallbackCharacter", realm: "Icecrown" }
+    : undefined;
   globalThis.fetch = async () => new Response(JSON.stringify({
     id: "1538061412356722709",
     title: "Test raid",
