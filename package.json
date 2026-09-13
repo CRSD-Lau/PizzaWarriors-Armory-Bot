@@ -28,7 +28,7 @@
   "dependencies": {
     "discord.js": "^14.24.2",
     "dotenv": "^17.2.3",
-    "playwright": "^1.56.1"
+    "playwright": "^1.63.0"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
