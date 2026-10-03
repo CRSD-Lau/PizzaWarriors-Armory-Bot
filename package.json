@@ -23,12 +23,15 @@
     "typecheck": "tsc --noEmit",
     "test:raid-workflow": "node --test tools/pizza-raid-helper/scripts/*.test.mjs",
     "test": "node --import tsx --test --test-concurrency=2 tests/*.test.ts",
-    "test:cards": "tsx scripts/smoke-cards.ts"
+    "test:cards": "tsx scripts/smoke-cards.ts",
+    "test:music:sources": "tsx scripts/smoke-music.ts"
   },
   "dependencies": {
+    "@discordjs/voice": "0.19.2",
     "discord.js": "^14.24.2",
     "dotenv": "^18.0.3",
-    "playwright": "^1.63.0"
+    "playwright": "^1.63.0",
+    "spotify-url-info": "3.3.3"
   },
   "devDependencies": {
     "@types/node": "^24.13.6",
