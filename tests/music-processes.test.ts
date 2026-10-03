@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { ChildProcessWithoutNullStreams, SpawnOptionsWithoutStdio } from "node:child_process";
 import { EventEmitter } from "node:events";
+import { resolve } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { MusicProcesses, sanitizedChildEnvironment, type SpawnProcess, type SpawnedProcess } from "../src/music/processes.js";
@@ -53,7 +54,7 @@ function factory(onSpawn?: (call: SpawnCall) => void): { calls: SpawnCall[]; spa
   };
 }
 
-const paths = { ytDlpPath: "C:\\tools\\yt-dlp.exe", ffmpegPath: "C:\\tools\\ffmpeg.exe", nodePath: "C:\\Program Files\\nodejs\\node.exe" };
+const paths = { ytDlpPath: resolve("test-media-helpers", "yt-dlp.exe"), ffmpegPath: resolve("test-media-helpers", "ffmpeg.exe"), nodePath: process.execPath };
 
 test("builds a minimal child environment without Discord or generic secret variables", () => {
   const env = sanitizedChildEnvironment({

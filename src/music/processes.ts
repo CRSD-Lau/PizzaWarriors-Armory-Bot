@@ -1,6 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams, type SpawnOptionsWithoutStdio } from "node:child_process";
 import { access, stat } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { isAbsolute, win32 } from "node:path";
 import { PassThrough, type Readable } from "node:stream";
 import type { MusicReadiness, MusicStream } from "./types.js";
 
@@ -121,7 +121,7 @@ export class MusicProcesses {
     // spawned by this instance, so descendants are reaped without scanning or
     // touching unrelated user processes.
     const systemRoot = this.environment.SYSTEMROOT ?? this.environment.WINDIR;
-    const taskkillPath = systemRoot && isAbsolute(systemRoot) ? join(systemRoot, "System32", "taskkill.exe") : "taskkill.exe";
+    const taskkillPath = systemRoot && win32.isAbsolute(systemRoot) ? win32.join(systemRoot, "System32", "taskkill.exe") : "taskkill.exe";
     try {
       const killer = this.spawnProcess(taskkillPath, ["/PID", String(pid), "/T", "/F"], {
         shell: false,
