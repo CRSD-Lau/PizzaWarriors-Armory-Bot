@@ -33,6 +33,8 @@ import { CoreRoleRosterError, fetchCoreRoleMembers, roleBackedCoreRoster } from 
 import { fetchRaidHelperCandidateIds, RaidHelperDiscoveryError } from "./raid-helper-discovery.js";
 import { collectSuccessful, handleInteractionSafely, OperationAdmission, updateAfterAcknowledgement } from "./interaction-safety.js";
 import { parseRosterButtonId, rosterButtonId } from "./roster-buttons.js";
+import { MusicSources } from "./music/sources.js";
+import { MusicService, musicCommands } from "./music/service.js";
 
 const command = new SlashCommandBuilder()
   .setName("armory")
@@ -106,7 +108,11 @@ const recentReadyEvents = new RecentReadyEvents();
 const coreRosters = new CoreRosterStore();
 const coreAttendance = new CoreAttendanceStore();
 const discordRest = new REST({ version: "10" }).setToken(config.discordToken);
-const client = new Client({ intents: [GatewayIntentBits.Guilds], allowedMentions: { parse: [], repliedUser: false } });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates], allowedMentions: { parse: [], repliedUser: false } });
+const music = new MusicService(client, new MusicSources({
+  ytDlpPath: config.musicYtDlpPath,
+  ffmpegPath: config.musicFfmpegPath,
+}), { enabled: config.musicEnabled, guildId: config.discordGuildId });
 const lookupCooldowns = new Map<string, number>();
 const corePingsInFlight = new Set<string>();
 const operationAdmission = new OperationAdmission(4);
@@ -196,11 +202,12 @@ async function registerCommand(): Promise<void> {
   const route = config.discordGuildId
     ? Routes.applicationGuildCommands(config.discordClientId, config.discordGuildId)
     : Routes.applicationCommands(config.discordClientId);
-  await discordRest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), attendanceCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON()] });
+  await discordRest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), attendanceCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON(), ...musicCommands().map((entry) => entry.toJSON())] });
 }
 
 client.once(Events.ClientReady, () => console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`));
 client.on(Events.Error, (error) => console.error("Discord client error", error));
+client.on(Events.VoiceStateUpdate, (previous, current) => music.onVoiceStateUpdate(previous, current));
 client.on(Events.InteractionCreate, (interaction) => {
   void handleInteractionSafely(interaction, async (current) => {
     const expensive = current.isChatInputCommand()
@@ -217,6 +224,7 @@ client.on(Events.InteractionCreate, (interaction) => {
 });
 
 async function handleInteraction(interaction: Interaction): Promise<void> {
+  if (interaction.isChatInputCommand() && await music.handle(interaction)) return;
   if (interaction.isAutocomplete()) {
     const query = interaction.options.getFocused().toLowerCase();
     if (interaction.commandName === "upgrade") {
@@ -614,14 +622,16 @@ createServer((request, response) => {
   }
   const healthy = client.isReady();
   response.writeHead(healthy ? 200 : 503, { "content-type": "application/json" });
-  response.end(JSON.stringify({ ok: healthy, discordReady: client.isReady() }));
+  response.end(JSON.stringify({ ok: healthy, discordReady: client.isReady(), music: music.health() }));
 }).listen(config.port);
 
+await music.initialize();
 await registerCommand();
 await client.login(config.discordToken);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
+    await music.close();
     await armory.close();
     await cards.close();
     client.destroy();

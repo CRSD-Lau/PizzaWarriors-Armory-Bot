@@ -9,6 +9,19 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ## [Unreleased]
 
+### Added
+
+- Voice-channel music with `/play`, `/queue`, `/nowplaying`, `/pause`, `/resume`, `/skip`, and `/stop`.
+- Private, dismissible music responses and error notices, without public song announcements or channel spam.
+- YouTube search/video/playlist input and public Spotify song/playlist matching to YouTube, without a Spotify login.
+- A 100-song waiting queue, same-channel controls, cancellation, automatic departure, and independent music readiness in `/healthz`.
+- A checksum-pinned Windows yt-dlp installer and source smoke check; music streams through FFmpeg without saving songs.
+
+### Changed
+
+- Enabled the Guild Voice States intent; music additionally requires channel-level View Channel, Connect, and Speak permissions.
+- Updated the existing transitive Undici dependency to its patched compatible release after the production audit identified security advisories.
+
 ## [1.0.1] - 2026-09-06
 
 ### Added

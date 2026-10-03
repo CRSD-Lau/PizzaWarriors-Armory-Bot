@@ -32,4 +32,7 @@ export const config = {
   headless: (process.env.HEADLESS ?? "true").toLowerCase() !== "false",
   warmaneCookie: process.env.WARMANE_COOKIE?.trim() || undefined,
   port: portNumber(),
+  musicEnabled: process.env.MUSIC_ENABLED?.trim().toLowerCase() === "true",
+  musicYtDlpPath: process.env.MUSIC_YTDLP_PATH?.trim() || "",
+  musicFfmpegPath: process.env.MUSIC_FFMPEG_PATH?.trim() || "",
 };

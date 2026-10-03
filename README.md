@@ -36,6 +36,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Includes a separately scheduled [weekly raid workflow](tools/pizza-raid-helper/references/operations.md): Raid-Helper signup creation, native Discord voice events, 30-minute reminders, and guarded end-of-raid rollover.
 - Privately tracks Pizza Core signup responses week over week for officers without re-opening old Raid-Helper events.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
+- Plays music in your voice channel from YouTube searches/links and public YouTube or Spotify playlists. Spotify links are matched to YouTube recordings.
 - Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
 - Runs without a database, web dashboard, message-content intent, or continuous guild-member monitoring.
 
@@ -53,6 +54,18 @@ Look up a character with one slash command and receive a mobile-readable equipme
 /upgrade name:Lausudo realm:Lordaeron spec:Protection
 ```
 
+```text
+/play query:<song name, YouTube link, or public Spotify link>
+/queue
+/nowplaying
+/pause
+/resume
+/skip
+/stop
+```
+
+Music joins the caller's voice channel and stays in one room at a time. Anyone in that room can control playback. All music replies are private, dismissible messages; the bot does not post song announcements to the channel. Playlist imports and the waiting queue are capped at 100 songs, and the bot leaves after 60 seconds with an empty queue or no human listeners. Queues are cleared on restart. `/stop` also cancels lookups still in progress. See [music setup and validation](docs/MUSIC.md).
+
 `/ready` finds the current **Pizza Core ICC25** Raid-Helper post in the configured signup channel or forum, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. Forum discovery checks active and recently archived posts, accepts only posts created by Raid-Helper, and uses the **PizzaCore** or **PizzaRaid** forum tag when available. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Pizza Core** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
 
 `/attendance` is an officer-only, ephemeral report showing the current core's rolling signup history. Current/upcoming Pizza Core `/ready` runs create or refresh one snapshot per verified server-owned event. Inspecting a historical or foreign event cannot rewrite core history or enable reminders. Older weeks without a captured core snapshot are not reconstructed from today's membership. Missing means no signup existed anywhere in that snapshot; explicit absent, tentative, bench, and late selections remain distinct. Raid-Helper cannot prove that a signed player actually attended the raid, so the bot does not invent true no-show records.
@@ -69,7 +82,7 @@ Supported realms are **Lordaeron**, **Icecrown**, and **Blackrock**. The configu
 - Google Chrome (used in headless mode to render the card without opening terminal windows)
 - A Discord application with a bot token and application ID
 
-The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** gateway intent. Role-backed core tracking additionally requires **Server Members Intent** to be enabled for the application so the bot can call Discord's member-list endpoint on demand. The client does not subscribe to member gateway events or monitor messages. Ordinary armory/readiness commands do not require a Raid-Helper API key; the optional weekly raid publisher does. Manual core reminders and private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
+The bot needs only the `bot` and `applications.commands` invite scopes and the Discord **Guilds** and **Guild Voice States** gateway intents. Music also requires View Channel, Connect, and Speak in the target voice channel. Role-backed core tracking additionally requires **Server Members Intent** to be enabled for the application so the bot can call Discord's member-list endpoint on demand. The client does not subscribe to member gateway events or monitor messages. Ordinary armory/readiness commands do not require a Raid-Helper API key; the optional weekly raid publisher does. Manual core reminders and private attendance history are restricted to members with **Manage Events**, with runtime checks also accepting **Manage Server**.
 
 ## Quick start
 
