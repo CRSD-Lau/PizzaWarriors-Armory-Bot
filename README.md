@@ -116,7 +116,10 @@ The optional weekly publisher is versioned under [`tools/pizza-raid-helper`](too
 
 Production uses one persistent Windows Task Scheduler process. Run the installer
 once from Administrator PowerShell; it removes the obsolete PM2 watchdog and
-logon tasks, registers a single S4U boot task, and prevents parallel instances.
+logon tasks, registers a single S4U task, and prevents parallel instances. The
+task starts at boot and every minute indefinitely. `IgnoreNew` leaves a running
+bot alone; a stopped or crashed bot starts at the next tick. The existing
+one-minute failure retries remain enabled as well.
 
 ```powershell
 .\scripts\install-boot-recovery.ps1 -StartNow
@@ -126,6 +129,25 @@ Invoke-RestMethod http://127.0.0.1:3000/healthz
 
 Do not combine this task with a PM2 boot, logon, or repeating watchdog task.
 The PM2 ecosystem file remains available only for deliberate interactive use.
+
+To add recovery to an existing installation without stopping the bot or changing
+its action/account, run `scripts/enable-auto-recovery.ps1` from Administrator
+PowerShell. It backs up the task definition and verifies the saved trigger.
+
+For maintenance or deployment, **disable the task before stopping it** so the
+timer cannot start it while files or dependencies are being updated:
+
+```powershell
+Disable-ScheduledTask -TaskName "PizzaWarriors Armory Bot"
+Stop-ScheduledTask -TaskName "PizzaWarriors Armory Bot"
+# Complete maintenance, then:
+Enable-ScheduledTask -TaskName "PizzaWarriors Armory Bot"
+Start-ScheduledTask -TaskName "PizzaWarriors Armory Bot"
+```
+
+Recovery requires Windows to be awake. It restarts an exited process; it does
+not terminate an existing process merely because Discord or Warmane is slow.
+Keep the separate **Pizza Core Weekly Raids** task unchanged.
 
 - `GET /healthz` returns `{ "ok": true }` for health probes.
 - Complete item metadata is cached for 30 days in `.cache/items.json`; incomplete source responses retry after one minute instead of preserving placeholder values for a month.

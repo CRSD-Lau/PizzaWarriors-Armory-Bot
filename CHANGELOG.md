@@ -9,6 +9,10 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Added one-minute recovery triggers to the existing single-instance Windows bot task, so an exited process is retried beyond the finite failure-retry window. Documented disabling the task during maintenance.
+
 ### Added
 
 - Voice-channel music with `/play`, `/queue`, `/nowplaying`, `/pause`, `/resume`, `/skip`, and `/stop`.

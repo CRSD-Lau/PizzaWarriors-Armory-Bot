@@ -119,6 +119,10 @@ foreach ($name in $legacyTaskNames) {
 
 $existingMainTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
 $wasRunning = $null -ne $existingMainTask -and $existingMainTask.State -eq 'Running'
+if ($null -ne $existingMainTask -and $existingMainTask.Settings.Enabled) {
+  # Pause recurring recovery before replacing files/task settings.
+  Disable-ScheduledTask -TaskName $taskName | Out-Null
+}
 if ($wasRunning) {
   Stop-ScheduledTask -TaskName $taskName
   if (-not (Wait-ForStoppedBot -Uri $HealthUri -TaskName $taskName)) {
@@ -128,7 +132,10 @@ if ($wasRunning) {
 
 $arguments = "--import tsx `"$botScript`""
 $action = New-ScheduledTaskAction -Execute $nodeExe -Argument $arguments -WorkingDirectory $repoRoot
-$trigger = New-ScheduledTaskTrigger -AtStartup
+$bootTrigger = New-ScheduledTaskTrigger -AtStartup
+$recoveryTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 1)
+$recoveryTrigger.Id = 'BotAutoRecovery'
+$recoveryTrigger.Repetition.StopAtDurationEnd = $false
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType S4U -RunLevel Limited
 $settings = New-ScheduledTaskSettingsSet `
   -StartWhenAvailable `
@@ -141,9 +148,9 @@ $settings = New-ScheduledTaskSettingsSet `
 
 Register-ScheduledTask `
   -TaskName $taskName `
-  -Description 'Runs the PizzaWarriors Armory Bot directly as one background process after Windows boots.' `
+  -Description 'Runs one PizzaWarriors Armory Bot process at boot; retries stopped instances every minute.' `
   -Action $action `
-  -Trigger $trigger `
+  -Trigger @($bootTrigger, $recoveryTrigger) `
   -Principal $principal `
   -Settings $settings `
   -Force | Out-Null
@@ -154,8 +161,8 @@ if ($StartNow -or $wasRunning) {
   $launchStarted = Get-Date
   Start-ScheduledTask -TaskName $taskName
   if (-not (Wait-ForHealthyBot -Uri $HealthUri -TaskName $taskName -NotBefore $launchStarted)) {
-    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     Disable-ScheduledTask -TaskName $taskName | Out-Null
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
     throw "The new task did not become healthy at $HealthUri within 45 seconds. It was stopped and disabled; backups are at $backupDir."
   }
   Write-Output "Healthy: $HealthUri"
