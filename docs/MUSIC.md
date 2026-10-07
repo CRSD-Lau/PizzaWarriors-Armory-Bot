@@ -40,6 +40,8 @@ Use absolute executable paths because Task Scheduler may have a different PATH. 
 
 Keep the existing `DISCORD_GUILD_ID` so commands are registered to Pizza Warriors. In Discord, allow the bot **View Channel**, **Connect**, and **Speak** in the desired voice channels, plus its existing text reply permissions. Guild Voice States is a normal gateway intent; no new privileged intent toggle is required.
 
+Discord counts the bot toward a voice channel's member limit. When a room is full, `/play` replies privately that a slot is needed. To let the bot join a full room while keeping its human limit, allow **Move Members** for the bot member in that channel's permissions. This is Discord's capacity-bypass permission; the music commands do not move other members. Scope this optional permission to the intended channel. Administrator permission is unnecessary.
+
 Restart only the existing **PizzaWarriors Armory Bot** task after deployment. Do not reinstall it or restart **Pizza Core Weekly Raids**. The latter uses the same private `.env` for existing credentials but has its own runtime and journal.
 
 ## Checks and recovery
