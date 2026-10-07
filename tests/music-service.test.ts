@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { PassThrough } from "node:stream";
 import { setImmediate } from "node:timers/promises";
-import { ChannelType, Collection, MessageFlags, type ChatInputCommandInteraction, type Client, type Guild, type VoiceState } from "discord.js";
+import { ChannelType, Collection, MessageFlags, PermissionFlagsBits, type ChatInputCommandInteraction, type Client, type Guild, type VoiceState } from "discord.js";
 import { MusicService, type MusicTransport, type MusicTransportCallbacks, type MusicTransportSession } from "../src/music/service.js";
 import type { MusicReadiness, MusicSelection, MusicSource, MusicStream, MusicTrack } from "../src/music/types.js";
 
@@ -133,22 +133,29 @@ class DelayedTransport implements MusicTransport {
 
 interface Harness {
   guild: Guild;
-  voiceChannel: { id: string; type: ChannelType; members: Collection<string, unknown>; isVoiceBased(): boolean };
+  voiceChannel: { id: string; type: ChannelType; members: Collection<string, unknown>; userLimit: number; isVoiceBased(): boolean };
   human: { id: string; user: { bot: boolean }; voice: { channel: unknown; channelId: string | null } };
-  permissions: { allowed: boolean };
+  permissions: { allowed: boolean; moveMembers: boolean; administrator: boolean };
 }
 
 function harness(guildId = "guild-1", channelId = "voice-1"): Harness {
   const members = new Collection<string, unknown>();
-  const voiceChannel = { id: channelId, type: ChannelType.GuildVoice, members, isVoiceBased: () => true };
+  const voiceChannel = { id: channelId, type: ChannelType.GuildVoice, members, userLimit: 0, isVoiceBased: () => true };
   const human = { id: "human-1", displayName: "Neil", user: { bot: false }, voice: { channel: voiceChannel, channelId } };
   members.set(human.id, human);
-  const permissions = { allowed: true };
+  const permissions = { allowed: true, moveMembers: false, administrator: false };
+  const bot = { id: "music-bot", user: { bot: true }, voice: { channel: null, channelId: null } };
   const guild = {
     id: guildId,
     afkChannelId: null,
     voiceAdapterCreator: {},
-    members: { me: { permissionsIn: () => ({ has: () => permissions.allowed }) } },
+    members: { me: { ...bot, permissionsIn: () => ({
+      has: (requested: bigint | bigint[]) => (Array.isArray(requested) ? requested : [requested]).every((flag) => {
+        if (flag === PermissionFlagsBits.MoveMembers) return permissions.moveMembers || permissions.administrator;
+        if (flag === PermissionFlagsBits.Administrator) return permissions.administrator;
+        return permissions.allowed || permissions.administrator;
+      }),
+    }) } },
     channels: { cache: new Collection([[channelId, voiceChannel]]) },
   } as unknown as Guild;
   return { guild, voiceChannel, human, permissions };
@@ -294,10 +301,12 @@ async function verifyPendingJoinCancellationAndWaiters(): Promise<void> {
   const waiterService = new MusicService(fakeClient, waiterSource, { enabled: true, transport: waiterTransport });
   await waiterService.initialize();
   const first = interaction(waiterState, "play", "left-before-connect");
-  const second = interaction(waiterState, "play", "still-here");
   const firstRequest = waiterService.handle(first.value);
-  const secondRequest = waiterService.handle(second.value);
   await waiterTransport.started.promise;
+  waiterState.voiceChannel.userLimit = 1;
+  const second = interaction(waiterState, "play", "still-here");
+  const secondRequest = waiterService.handle(second.value);
+  await flush();
   (first.value.member as unknown as { voice: { channelId: string | null } }).voice.channelId = null;
   const sharedSession = waiterTransport.release();
   await firstRequest;
@@ -477,10 +486,85 @@ async function verifyPermissionsConnectionAndDeparture(): Promise<void> {
   assert.equal(lostPlay.publicMessages.length, 0, "connection errors must never post to the public channel");
 }
 
+async function verifyVoiceChannelCapacity(): Promise<void> {
+  const fullSource = new FakeSource();
+  const fullTransport = new FakeTransport();
+  const fullState = harness("guild-full");
+  fullState.voiceChannel.userLimit = 2;
+  fullState.voiceChannel.members.set("human-2", { id: "human-2", user: { bot: false } });
+  const full = new MusicService(fakeClient, fullSource, { enabled: true, transport: fullTransport });
+  await full.initialize();
+  const fullPlay = interaction(fullState, "play", "blocked");
+  const fullRequest = full.handle(fullPlay.value);
+  await flush();
+  fullSource.lookups.get("blocked")?.resolve(selection("Blocked"));
+  await fullRequest;
+  assert.match(fullPlay.replies[0], /full.*2\/2.*free (?:a slot|room)/i);
+  assert.equal(fullTransport.sessions.length, 0, "a new join must stop before transport when the channel is full");
+  assert.equal(fullSource.lookups.size, 0, "a full-channel rejection must not resolve media");
+
+  for (const [name, configure] of [
+    ["move", (state: Harness) => { state.permissions.moveMembers = true; }],
+    ["admin", (state: Harness) => { state.permissions.administrator = true; }],
+    ["unlimited", (state: Harness) => { state.voiceChannel.userLimit = 0; }],
+    ["not-full", (state: Harness) => { state.voiceChannel.userLimit = 3; }],
+    ["bot-state", (state: Harness) => {
+      (state.guild.members.me as unknown as { voice: { channelId: string | null } }).voice.channelId = state.voiceChannel.id;
+    }],
+    ["bot-member", (state: Harness) => {
+      state.voiceChannel.members.set("music-bot", state.guild.members.me);
+    }],
+  ] as const) {
+    const source = new FakeSource();
+    const transport = new FakeTransport();
+    const state = harness(`guild-${name}`);
+    state.voiceChannel.userLimit = 2;
+    state.voiceChannel.members.set("human-2", { id: "human-2", user: { bot: false } });
+    configure(state);
+    const service = new MusicService(fakeClient, source, { enabled: true, transport });
+    await service.initialize();
+    const play = interaction(state, "play", name);
+    const request = service.handle(play.value);
+    await flush();
+    source.lookups.get(name)?.resolve(selection(name));
+    await request;
+    assert.equal(transport.sessions.length, 1, `${name} should permit a new voice join`);
+    await service.close();
+  }
+
+  const activeSource = new FakeSource();
+  const activeTransport = new FakeTransport();
+  const activeState = harness("guild-active");
+  const active = new MusicService(fakeClient, activeSource, { enabled: true, transport: activeTransport });
+  await active.initialize();
+  const first = interaction(activeState, "play", "first-active");
+  const firstRequest = active.handle(first.value);
+  await flush();
+  activeSource.lookups.get("first-active")?.resolve(selection("First Active"));
+  await firstRequest;
+  activeState.voiceChannel.userLimit = 2;
+  activeState.voiceChannel.members.set("human-2", { id: "human-2", user: { bot: false } });
+  const second = interaction(activeState, "play", "second-active");
+  const secondRequest = active.handle(second.value);
+  await flush();
+  activeSource.lookups.get("second-active")?.resolve(selection("Second Active"));
+  await secondRequest;
+  assert.equal(activeTransport.sessions.length, 1, "an active same-channel session must accept requests after the room becomes full");
+
+  const otherState = harness("guild-active", "voice-other");
+  otherState.voiceChannel.userLimit = 1;
+  const crossRoom = interaction(otherState, "play", "cross-room");
+  await active.handle(crossRoom.value);
+  assert.match(crossRoom.replies[0], /already playing in another voice channel/i);
+  assert.doesNotMatch(crossRoom.replies[0], /full/i, "cross-room restriction must take priority over target capacity");
+  await active.close();
+}
+
 await verifyOrderedAdmissionsAndControls();
 await verifyStopCancelsLateLookup();
 await verifyPendingJoinCancellationAndWaiters();
 await verifyRequesterRevalidation();
 await verifyBoundedQueueRenderingAndValidation();
 await verifyPermissionsConnectionAndDeparture();
+await verifyVoiceChannelCapacity();
 console.log("Music service tests passed.");

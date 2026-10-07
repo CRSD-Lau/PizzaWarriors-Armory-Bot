@@ -9,6 +9,10 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- Full voice channels now receive an immediate private explanation instead of a generic connection timeout; existing sessions and bots allowed to bypass the channel limit keep working.
+
 ### Added
 
 - Voice-channel music with `/play`, `/queue`, `/nowplaying`, `/pause`, `/resume`, `/skip`, and `/stop`.

@@ -356,6 +356,20 @@ export class MusicService {
       await reply("I need View Channel, Connect, and Speak permissions in that voice channel.");
       return;
     }
+    const reservedChannelId = this.#sessions.get(guild.id)?.channelId ?? this.#joining.get(guild.id)?.channelId;
+    if (reservedChannelId && reservedChannelId !== channel.id) {
+      await reply("I am already playing in another voice channel in this server.");
+      return;
+    }
+    const botAlreadyInChannel = Boolean(botMember
+      && (botMember.voice.channelId === channel.id || channel.members.has(botMember.id)));
+    const channelIsFull = channel.userLimit > 0 && channel.members.size >= channel.userLimit;
+    const canBypassCapacity = permissions.has(PermissionFlagsBits.MoveMembers)
+      || permissions.has(PermissionFlagsBits.Administrator);
+    if (!reservedChannelId && !botAlreadyInChannel && channelIsFull && !canBypassCapacity) {
+      await reply(`That voice channel is full (${channel.members.size}/${channel.userLimit}). Free a slot or use another voice channel, then try again.`);
+      return;
+    }
 
     let session: Session;
     try {
