@@ -41,5 +41,21 @@ try {
     globalThis.fetch = async () => new Response(JSON.stringify({ [key]: event.guildId, title: event.title, startTime: event.startsAt, signUps: [] }));
     assert.equal((await getRaidHelperEvent(event.eventId)).guildId, event.guildId);
   }
+  const startsAtSeconds = 1_800_000_000;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    serverId: event.guildId, title: event.title, startTime: startsAtSeconds,
+    endTime: startsAtSeconds + 4 * 60 * 60, advancedSettings: { duration: 30 }, signUps: [],
+  }));
+  assert.equal((await getRaidHelperEvent(event.eventId)).endsAt, (startsAtSeconds + 4 * 60 * 60) * 1_000, "valid endTime wins over duration");
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    serverId: event.guildId, title: event.title, startTime: startsAtSeconds,
+    endTime: startsAtSeconds, advancedSettings: { duration: 240 }, signUps: [],
+  }));
+  assert.equal((await getRaidHelperEvent(event.eventId)).endsAt, (startsAtSeconds + 4 * 60 * 60) * 1_000, "duration fills a legacy non-advancing endTime");
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    serverId: event.guildId, title: event.title, startTime: startsAtSeconds,
+    endTime: startsAtSeconds, advancedSettings: { duration: 0 }, signUps: [],
+  }));
+  assert.equal((await getRaidHelperEvent(event.eventId)).endsAt, undefined, "unknown legacy end remains unknown for the conservative completion gate");
 } finally { globalThis.fetch = originalFetch; }
 console.log("Ready event snapshot and stale-gear tests passed.");

@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { ArmoryCardRenderer } from "../src/card.js";
 import { auditCoreRoster, type CoreRosterSnapshot } from "../src/core-roster.js";
 import { buildCoreAttendanceHistory, type CoreAttendanceEvent } from "../src/core-attendance.js";
+import type { RaidAttendanceSummary } from "../src/raid-attendance.js";
 import { auditGearPreparation } from "../src/gear-audit.js";
 import { calculateGearScore, type GearItem, type GearScoreEquipLoc } from "../src/gearscore.js";
 import type { GuildRoster } from "../src/guild.js";
@@ -89,6 +90,18 @@ const events: CoreAttendanceEvent[] = Array.from({ length: 4 }, (_, week) => ({
   })),
 }));
 const history = buildCoreAttendanceHistory(coreRoster, events);
+const completedEvents = events.map((event) => ({
+  ...event,
+  entries: event.entries.map((entry) => entry.discordUserId === signups[0]!.discordUserId
+    ? { ...entry, status: "Signed" as const }
+    : entry),
+}));
+const attendance: RaidAttendanceSummary = {
+  history: buildCoreAttendanceHistory(coreRoster, completedEvents),
+  requestedRaids: completedEvents.length,
+  unavailableRaids: 0,
+  refreshedAt: fixtureNow,
+};
 const profile: UpgradeProfile = {
   id: "visual-smoke", className: "Paladin", specName: "Protection", status: "research", content: "ICC / Ruby Sanctum",
   reviewNote: "Synthetic local visual fixture only.",
@@ -166,7 +179,7 @@ try {
     ["armory", () => renderer.render({ name: injectionText, realm: "Lordaeron", className: "Paladin", primarySpec: "Protection", items, summary })],
     ["upgrade", () => renderer.renderUpgrade({ name: injectionText, realm: "Lordaeron", className: "Paladin", specName: "Protection", profile, items })],
     ["ready", () => renderer.renderReady({ report, realm: "Lordaeron", coreRoster: coreAudit })],
-    ["attendance", () => renderer.renderAttendance({ history })],
+    ["attendance", () => renderer.renderAttendance({ history, attendance })],
     ["roster", () => renderer.renderRoster({ roster, page: 0, pageSize: 10 })],
   ];
   for (const [card, render] of renders) {

@@ -31,7 +31,7 @@ function history(eventCount: number, members: CoreAttendanceMemberHistory[]): Pi
   };
 }
 
-test("perfect signup recognition requires Signed for every selected event and sorts names", () => {
+test("signup and completed-attendance recognition require Signed for every selected event and sort names", () => {
   const candidates = [
     member("Zulu", ["Signed", "Signed"]),
     member("Absent responder", ["Signed", "Absent"]),

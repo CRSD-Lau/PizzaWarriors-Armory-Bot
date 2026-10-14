@@ -31,7 +31,7 @@ export type ReadyReport = {
   members: ReadyMember[];
   unresolved: Array<{ signup: RaidSignup; reason: string }>;
 };
-export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; guildId?: string; signups: RaidSignup[] };
+export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; endsAt?: number; guildId?: string; signups: RaidSignup[] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -192,9 +192,20 @@ export async function getRaidHelperEvent(value: string): Promise<RaidHelperEvent
   if (!isRecord(payload)) throw new Error("Raid-Helper returned an unexpected event response.");
   const title = firstText(payload, ["title", "name", "event_name", "eventName"]) ?? "Raid readiness";
   const startsAt = firstTimestamp(payload, ["startTime", "start_time", "startsAt", "starts_at"]);
+  const suppliedEnd = firstTimestamp(payload, ["endTime", "end_time", "endsAt", "ends_at"]);
+  const rawAdvancedSettings = payload.advancedSettings;
+  const rawDuration = isRecord(rawAdvancedSettings) ? rawAdvancedSettings.duration : undefined;
+  const durationMinutes = typeof rawDuration === "number" ? rawDuration : typeof rawDuration === "string" ? Number(rawDuration) : Number.NaN;
+  const endsAt = startsAt === undefined
+    ? undefined
+    : suppliedEnd !== undefined && suppliedEnd > startsAt
+      ? suppliedEnd
+      : Number.isFinite(durationMinutes) && durationMinutes > 0
+        ? startsAt + durationMinutes * 60_000
+        : undefined;
   const rawGuildId = firstText(payload, ["serverId", "server_id", "guildId", "guild_id"]);
   const guildId = rawGuildId && /^\d{16,22}$/.test(rawGuildId) ? rawGuildId : undefined;
-  return { eventId, title, ...(startsAt ? { startsAt } : {}), ...(guildId ? { guildId } : {}), signups: parseRaidHelperSignups(payload) };
+  return { eventId, title, ...(startsAt ? { startsAt } : {}), ...(endsAt ? { endsAt } : {}), ...(guildId ? { guildId } : {}), signups: parseRaidHelperSignups(payload) };
 }
 
 async function concurrentMap<T, R>(items: readonly T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {

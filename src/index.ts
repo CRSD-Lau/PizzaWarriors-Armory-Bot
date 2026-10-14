@@ -29,6 +29,7 @@ import { gearScoreTier } from "./score-tiers.js";
 import { formatCharacterSpecialization } from "./character.js";
 import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
 import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
+import { refreshRaidAttendance } from "./raid-attendance.js";
 import { CoreRoleRosterError, fetchCoreRoleMembers, roleBackedCoreRoster } from "./core-role.js";
 import { fetchRaidHelperCandidateIds, RaidHelperDiscoveryError } from "./raid-helper-discovery.js";
 import { collectSuccessful, handleInteractionSafely, OperationAdmission, updateAfterAcknowledgement } from "./interaction-safety.js";
@@ -69,7 +70,7 @@ const readyCommand = new SlashCommandBuilder()
 
 const attendanceCommand = new SlashCommandBuilder()
   .setName("attendance")
-  .setDescription("Privately review Pizza Core signup response history")
+  .setDescription("Privately review Pizza Core attendance and signup history")
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents)
   .setDMPermission(false)
   .addIntegerOption((option) => option.setName("weeks").setDescription("Number of weekly raids to show (default: 8)").setMinValue(2).setMaxValue(12));
@@ -360,7 +361,7 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === "attendance") {
     if (!interaction.guildId || !canManageCore(interaction.memberPermissions)) {
-      await interaction.reply({ content: "Only members with Manage Events or Manage Server can view Pizza Core signup history.", flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: "Only members with Manage Events or Manage Server can view Pizza Core attendance and signup history.", flags: MessageFlags.Ephemeral });
       return;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -372,27 +373,29 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
       }
       const weeks = interaction.options.getInteger("weeks") ?? 8;
       // A current role or edited roster post cannot prove who was core in a
-      // previous raid. Only use snapshots actually captured for that event.
-      const history = buildCoreAttendanceHistory(roster, await coreAttendance.list(interaction.guildId, weeks), weeks);
+      // previous raid. Preserve the membership captured for each event.
+      const sourceEvents = await coreAttendance.list(interaction.guildId);
+      const history = buildCoreAttendanceHistory(roster, sourceEvents, weeks);
       if (!history.events.length) {
         await interaction.editReply("No Pizza Core history has been captured yet. Run **/ready** for the current Pizza Core event; future weekly runs will update this private report automatically.");
         return;
       }
+      const attendance = await refreshRaidAttendance({ roster, sourceEvents, guildId: interaction.guildId, limit: weeks });
       const cardName = `pizza-core-attendance-${history.events.at(-1)?.eventId ?? "history"}.png`;
-      const card = await cards.renderAttendance({ history });
+      const card = await cards.renderAttendance({ history, attendance });
       await interaction.editReply({
         content: "",
         embeds: [],
         files: [new AttachmentBuilder(card, {
           name: cardName,
-          description: "Private Pizza Core signup response history",
+          description: "Private Pizza Core attendance from updated Raid-Helper records and saved signup history",
         })],
       });
     } catch (error) {
       console.error("Core attendance report failed", error);
       await interaction.editReply(error instanceof CoreRoleRosterError
         ? error.message
-        : "I could not build the private signup-history report. The saved history was left unchanged; try again in a moment.");
+        : "I could not build the private attendance report. The saved history was left unchanged; try again in a moment.");
     }
     return;
   }
