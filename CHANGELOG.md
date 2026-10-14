@@ -15,6 +15,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Added
 
+- A green “Signed every raid” section on private `/attendance` cards, highlighting members signed for every event in the selected window with a full-window count and 100% badge.
 - Voice-channel music with `/play`, `/queue`, `/nowplaying`, `/pause`, `/resume`, `/skip`, and `/stop`.
 - Private, dismissible music responses and error notices, without public song announcements or channel spam.
 - YouTube search/video/playlist input and public Spotify song/playlist matching to YouTube, without a Spotify login.
