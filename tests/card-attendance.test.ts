@@ -37,12 +37,12 @@ function history(eventCount: number, members: CoreAttendanceMemberHistory[]): Co
   };
 }
 
-function summary(eventCount: number, members: CoreAttendanceMemberHistory[], unavailableEventIds: string[] = []): RaidAttendanceSummary {
+function summary(eventCount: number, members: CoreAttendanceMemberHistory[]): RaidAttendanceSummary {
   return {
     history: history(eventCount, members),
     requestedRaids: eventCount,
-    unavailableRaids: unavailableEventIds.length,
-    unavailableEventIds,
+    unavailableRaids: 0,
+    unavailableEventIds: [],
     refreshedAt: 1,
   };
 }
@@ -71,8 +71,7 @@ test("attendance recognizes Signed and Tentative across the full completed windo
 
 test("attendance recognition rejects empty and incomplete windows", () => {
   assert.deepEqual(perfectAttendanceMembers(summary(0, [member("No vacuous winner", [])])), []);
-  const incomplete = summary(1, [member("Unavailable miss", ["Missing"])], ["1000000000000000"]);
-  assert.deepEqual(perfectAttendanceMembers(incomplete), [], "a saved-only Missing status must still block recognition");
+  assert.deepEqual(perfectAttendanceMembers(summary(1, [member("No call/no show", ["Missing"])])), [], "Missing must block recognition");
 });
 
 test("row attendance uses each member's tracked history as its denominator", () => {

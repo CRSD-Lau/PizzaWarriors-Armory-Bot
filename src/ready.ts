@@ -183,11 +183,18 @@ export function selectCurrentPizzaCoreEvent(events: readonly RaidHelperEvent[], 
   return datedCoreEvents.find((event) => isCurrentPizzaCoreEvent(event, now));
 }
 
+export class RaidHelperEventError extends Error {
+  constructor(readonly status: number) {
+    super(`Raid-Helper returned ${status} for that event.`);
+    this.name = "RaidHelperEventError";
+  }
+}
+
 export async function getRaidHelperEvent(value: string): Promise<RaidHelperEvent> {
   const eventId = eventIdFromInput(value);
   if (!eventId) throw new Error("Provide a Raid-Helper forum post link or its copied Discord event ID.");
   const response = await fetch(`${RAID_HELPER_API}/${eventId}`, { headers: { accept: "application/json", "user-agent": "PizzaWarriorsArmoryBot/1.0" }, signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Raid-Helper returned ${response.status} for that event.`);
+  if (!response.ok) throw new RaidHelperEventError(response.status);
   const payload: unknown = await response.json();
   if (!isRecord(payload)) throw new Error("Raid-Helper returned an unexpected event response.");
   const title = firstText(payload, ["title", "name", "event_name", "eventName"]) ?? "Raid readiness";

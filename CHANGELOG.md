@@ -15,8 +15,9 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Added
 
-- A single completed-raid attendance view sourced from the raid leader's maintained Raid-Helper records. Signed and Tentative count as attended; Late and Bench mean did not attend; Absent is declared absence; Missing is no call/no show.
-- Full-window attendance recognition with `100% · N/N` only when every completed event was refreshed. Saved-only fallback columns are marked `*`, suppress percentages, and use `N/N recorded` without overlooking a saved Missing status.
+- A single completed-raid attendance view sourced from live or durably archived final Raid-Helper rosters. Signed and Tentative count as attended; Late and Bench mean did not attend; Absent is declared absence; Missing is no call/no show.
+- Full-window **100% attendance** recognition with `100% · N/N`, plus concise stats and exact status labels. Events without an available final roster are omitted instead of displaying signup-time fallback data.
+- Automatic five-minute final-roster archival after each raid's end grace period, with the existing 18-hour fallback for events without a usable end time.
 - Voice-channel music with `/play`, `/queue`, `/nowplaying`, `/pause`, `/resume`, `/skip`, and `/stop`.
 - Private, dismissible music responses and error notices, without public song announcements or channel spam.
 - YouTube search/video/playlist input and public Spotify song/playlist matching to YouTube, without a Spotify login.

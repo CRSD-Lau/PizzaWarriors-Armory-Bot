@@ -34,7 +34,7 @@ Look up a character with one slash command and receive a mobile-readable equipme
 - Turns a live Raid-Helper event into a raid-readiness card with attendee GS, iLvl, and selected spec.
 - Compares Raid-Helper responses with the configured **Pizza Core** role and can safely ping only current core members who have not responded at all.
 - Includes a separately scheduled [weekly raid workflow](tools/pizza-raid-helper/references/operations.md): Raid-Helper signup creation, native Discord voice events, 30-minute reminders, and guarded end-of-raid rollover.
-- Privately reports one completed-raid Pizza Core attendance window, refreshing final Raid-Helper statuses when available and marking saved-only fallback records.
+- Privately reports one completed-raid Pizza Core attendance window from final Raid-Helper rosters, using live final records or durable local archives.
 - Browses the public Warmane guild roster in a branded 10-member Discord carousel.
 - Plays music in your voice channel from YouTube searches/links and public YouTube or Spotify playlists. Spotify links are matched to YouTube recordings.
 - Builds upgrade cards directly from the PizzaWarriors Best-in-Slot Google Sheet, with owned-versus-target equipment.
@@ -68,9 +68,11 @@ Music joins the caller's voice channel and stays in one room at a time. Anyone i
 
 `/ready` finds the current **Pizza Core ICC25** Raid-Helper post in the configured signup channel or forum, reads its public event endpoint, and checks every active signup—including non-core guests—against Warmane. Forum discovery checks active and recently archived posts, accepts only posts created by Raid-Helper, and uses the **PizzaCore** or **PizzaRaid** forum tag when available. An explicitly supplied event link still overrides automatic selection. If a member's Discord name is not their character name, they use `/raider link` once; the link is saved only on this host and only for this Discord server. Tentative, bench, and absent entries are excluded from the active readiness total and listed separately by name. When `PIZZA_CORE_ROLE_ID` is configured, the live **Pizza Core** role is refreshed on every `/ready`; see the [core-roster reminder guide](docs/CORE-ROSTER.md).
 
-`/attendance` is an officer-only, ephemeral report over one window of completed Pizza Core raids. Upcoming and ongoing events are excluded. Each completed Raid-Helper roster is refreshed when available; an unavailable event remains in the same window using its saved snapshot and is visibly marked `*` as saved-only. The card never reports a percentage when any event uses that fallback.
+`/attendance` is an officer-only, ephemeral report over one window of completed Pizza Core raids. Upcoming and ongoing events are excluded. Each included raid uses a final Raid-Helper roster fetched after completion or its durable final-roster archive. Older events with neither source are omitted, so the displayed count, date range, totals, and table always describe the same available final records.
 
-Attendance follows the raid leader's maintained Raid-Helper statuses: **Signed** and **Tentative** count as attended; **Late** and **Bench** mean did not attend; **Absent** is a declared absence; **Missing** is no call/no show. The recognition section requires a full nonempty window containing only Signed or Tentative. With complete refreshed coverage it is labelled **100% attendance** and shows a percentage; with saved-only fallback records it is labelled **No recorded attendance misses** and shows only `N/N recorded`. Historical roster membership is preserved, so a member who was not on an older roster remains untracked (`—`) rather than being credited or penalized. The bot does not monitor gameplay or voice presence.
+The running bot discovers events automatically, saves core membership before the start, and archives the final roster after the raid ends. It checks every five minutes, allows a five-minute end grace period, and catches up after restarts. No manual `/ready` or `/attendance` run is required. Final archives are retained even when old Raid-Helper events disappear.
+
+Attendance follows the raid leader's maintained Raid-Helper statuses: **Signed** and **Tentative** count as attended; **Late** and **Bench** mean did not attend; **Absent** is a declared absence; **Missing** is no call/no show. The **100% attendance** section requires a full nonempty displayed window containing only Signed or Tentative. Historical roster membership is preserved, so a member who was not on an older roster remains untracked (`—`) rather than being credited or penalized. The bot does not monitor gameplay or voice presence.
 
 `/roster` defaults to **Pizza Warriors** on the configured realm. Its Previous and Next controls show ten characters at a time, while **Open Guild Armory** returns to the underlying public roster.
 
@@ -194,9 +196,9 @@ CI runs the type, regression, workflow, and dependency checks on Node 24 for Win
 - Rendered item-icon URLs are limited to HTTPS Warmane hosts and `wow.zamimg.com`.
 - Character and item text is escaped before card rendering.
 - No general Discord message content, voice activity, or gameplay attendance is stored.
-- The configured core role is fetched only when `/ready`, `/attendance`, or an officer reminder needs it; the bot does not subscribe to guild-member gateway events.
+- The configured core role is fetched for commands, officer reminders, and automatic pre-raid membership snapshots; the bot does not subscribe to guild-member gateway events.
 - The optional roster-post link and reminder timestamps remain in ignored `data/core-rosters.json`.
-- Private history stores each event's role roster and Raid-Helper response snapshot in ignored `data/core-attendance.json`; `/attendance` refreshes completed records in memory, keeps unavailable snapshots visibly marked, and replies ephemerally.
+- Private attendance data stores historical role/response snapshots in ignored `data/core-attendance.json` and durable final rosters in ignored `data/final-attendance.json`; `/attendance` replies are ephemeral.
 - Optional `/raider link` entries contain only Discord user ID, character name, and realm in `data/raider-links.json`; the file is excluded from Git.
 
 Read the [security policy](SECURITY.md) and the current [security review](docs/SECURITY-REVIEW.md) before hosting or contributing.

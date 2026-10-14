@@ -90,7 +90,13 @@ const events: CoreAttendanceEvent[] = Array.from({ length: 4 }, (_, week) => ({
     status: index === 0 && week === 0 ? "Missing" : entry.status,
   })),
 }));
-const history = buildCoreAttendanceHistory(coreRoster, events);
+const futureEvent: CoreAttendanceEvent = {
+  ...events.at(-1)!,
+  eventId: "123456789012349099",
+  title: "FUTURE SHOULD NOT RENDER",
+  startsAt: fixtureNow + 7 * 24 * 60 * 60_000,
+};
+const history = buildCoreAttendanceHistory(coreRoster, [...events, futureEvent]);
 const completedEvents = events.map((event, eventIndex) => ({
   ...event,
   entries: event.entries.map((entry) => entry.discordUserId === signups[0]!.discordUserId && eventIndex > 0
@@ -100,8 +106,8 @@ const completedEvents = events.map((event, eventIndex) => ({
 const attendance: RaidAttendanceSummary = {
   history: buildCoreAttendanceHistory(coreRoster, completedEvents),
   requestedRaids: completedEvents.length,
-  unavailableRaids: 1,
-  unavailableEventIds: [completedEvents[0]!.eventId],
+  unavailableRaids: 0,
+  unavailableEventIds: [],
   refreshedAt: fixtureNow,
 };
 const profile: UpgradeProfile = {
@@ -163,23 +169,26 @@ chromium.launch = async (options) => {
           containsLiteralName: document.querySelector(".card")?.textContent?.includes(literal),
           isAttendance: document.querySelector(".title")?.textContent === "Pizza Core Attendance",
           attendanceText: document.querySelector(".card")?.textContent ?? "",
-          savedOnlyDates: document.querySelectorAll(".event-date.saved-only").length,
-          savedOnlyStatuses: document.querySelectorAll(".status.saved-only").length,
+          savedOnlyElements: document.querySelectorAll(".saved-only").length,
+          warningElements: document.querySelectorAll(".attendance-unavailable").length,
+          sourceNotes: document.querySelectorAll(".source-note").length,
           leaderNames: [...document.querySelectorAll(".attended-member span")].map((node) => node.textContent),
-          redundantSignupSections: document.querySelectorAll(".signup-perfect").length,
+          legendLabels: [...document.querySelectorAll(".legend span")].map((node) => node.textContent?.replace(/^[✓TLBAM—]/, "").trim()),
         }), injectionText);
         assert.equal(inspection.injectedElements, 0);
         assert.equal(inspection.containsLiteralName, true);
         if (inspection.isAttendance) {
-          assert.equal(inspection.attendanceText.includes("%"), false, "partial coverage must suppress every percentage claim");
-          assert.equal(inspection.attendanceText.includes("No recorded attendance misses"), true);
-          assert.equal(inspection.savedOnlyDates, 1);
-          assert.ok(inspection.savedOnlyStatuses > 0);
+          assert.equal(inspection.attendanceText.includes("100% attendance"), true);
+          assert.equal(inspection.attendanceText.includes("*"), false);
+          assert.equal(inspection.attendanceText.includes("FUTURE SHOULD NOT RENDER"), false);
+          assert.equal(inspection.savedOnlyElements, 0);
+          assert.equal(inspection.warningElements, 0);
+          assert.equal(inspection.sourceNotes, 0);
+          assert.deepEqual(inspection.legendLabels, ["Signed up", "Tentative", "Late", "Bench", "Absent", "Missing", "No historical record"]);
           assert.ok(inspection.leaderNames.includes("Tentative Raider"), "Tentative must count as attended");
           assert.equal(inspection.leaderNames.includes("Late Raider"), false);
           assert.equal(inspection.leaderNames.includes("Benched Raider"), false);
-          assert.equal(inspection.leaderNames.includes(injectionText), false, "saved-only Missing must block recognition");
-          assert.equal(inspection.redundantSignupSections, 0);
+          assert.equal(inspection.leaderNames.includes(injectionText), false, "Missing must block recognition");
         }
         htmlChecks++;
       };
