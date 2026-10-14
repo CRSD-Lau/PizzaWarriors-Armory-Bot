@@ -17,9 +17,9 @@ const MAX_RAID_LIMIT = 52;
 
 export type RaidAttendanceSummary = {
   history: CoreAttendanceHistory;
-  /** Number of durable or freshly finalized raids included in the card. */
+  /** Number of completed raids with final or historical saved records in the card. */
   requestedRaids: number;
-  /** Completed candidates omitted because neither a fresh read nor final archive was available. */
+  /** Completed candidates omitted because no usable provider or saved record was available. */
   unavailableRaids: number;
   unavailableEventIds: string[];
   refreshedAt: number;
@@ -79,8 +79,8 @@ function safelyDue(candidate: AttendanceCandidate, now: number): boolean {
 }
 
 /**
- * Build a report exclusively from final provider data. Fresh reads are archived
- * when a shared store is supplied; pre-raid snapshots are never report fallback.
+ * Prefer final provider data, then a durable final archive, then the saved
+ * historical snapshot. Snapshot fallback never changes or creates final archives.
  */
 export async function refreshRaidAttendance(input: {
   roster: CoreRosterSnapshot;
@@ -139,8 +139,20 @@ export async function refreshRaidAttendance(input: {
 
   const selected: CoreAttendanceEvent[] = [];
   const unavailableEventIds: string[] = [];
+  const useSavedRecord = (candidate: AttendanceCandidate): void => {
+    if (candidate.archive) {
+      selected.push(candidate.archive.event);
+    } else if (safelyDue(candidate, refreshedAt)) {
+      if (candidate.snapshot?.entries.length && candidate.snapshot.capturedAt <= refreshedAt) {
+        selected.push(candidate.snapshot);
+      } else {
+        unavailableEventIds.push(candidate.eventId);
+      }
+    }
+  };
   const ordered = [...candidates.values()]
-    .filter((candidate) => candidate.startsAt <= refreshedAt)
+    .filter((candidate) => validDiscordId(candidate.eventId)
+      && isPizzaCoreEventTitle(candidate.title) && candidate.startsAt <= refreshedAt)
     .sort((left, right) => right.startsAt - left.startsAt)
     .slice(0, MAX_RAID_LIMIT);
 
@@ -155,14 +167,12 @@ export async function refreshRaidAttendance(input: {
     try {
       providerEvent = await fetchEvent(candidate.eventId);
     } catch {
-      if (candidate.archive) selected.push(candidate.archive.event);
-      else if (safelyDue(candidate, refreshedAt)) unavailableEventIds.push(candidate.eventId);
+      useSavedRecord(candidate);
       continue;
     }
 
     if (!verifiesCandidate(providerEvent, candidate, input.guildId)) {
-      if (candidate.archive) selected.push(candidate.archive.event);
-      else if (safelyDue(candidate, refreshedAt)) unavailableEventIds.push(candidate.eventId);
+      useSavedRecord(candidate);
       continue;
     }
 

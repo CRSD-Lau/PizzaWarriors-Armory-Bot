@@ -123,13 +123,13 @@ test("skips future and in-progress events and fills from older completed records
   assert.equal(result.requestedRaids, 2);
 });
 
-test("omits unavailable pre-raid snapshots and continues to older final data", async () => {
+test("uses safely completed saved core snapshots when provider reads fail or mismatch", async () => {
   const failed = snapshot("123456789012345640", baseNow - 24 * 60 * 60_000);
   const wrongGuild = snapshot("123456789012345641", baseNow - 25 * 60 * 60_000);
   const successA = snapshot("123456789012345642", baseNow - 26 * 60 * 60_000);
   const successB = snapshot("123456789012345643", baseNow - 27 * 60 * 60_000);
   const result = await refreshRaidAttendance({
-    roster: roster(), sourceEvents: [successB, wrongGuild, successA, failed], guildId, limit: 2, now: baseNow,
+    roster: roster(), sourceEvents: [successB, wrongGuild, successA, failed], guildId, limit: 4, now: baseNow,
     fetchEvent: async (id) => {
       if (id === failed.eventId) throw new Error("404");
       if (id === wrongGuild.eventId) return fresh(wrongGuild, { guildId: "123456789012345699" });
@@ -137,9 +137,162 @@ test("omits unavailable pre-raid snapshots and continues to older final data", a
       return fresh(source, { signups: [{ ...memberA, status: "Signed" }] });
     },
   });
-  assert.deepEqual(result.history.events.map((event) => event.eventId), [successB.eventId, successA.eventId]);
-  assert.deepEqual(result.unavailableEventIds, [failed.eventId, wrongGuild.eventId]);
-  assert.equal(result.requestedRaids, 2, "only included final records form the denominator");
+  assert.deepEqual(result.history.events.map((event) => event.eventId), [successB.eventId, successA.eventId, wrongGuild.eventId, failed.eventId]);
+  assert.deepEqual(result.unavailableEventIds, []);
+  assert.equal(result.requestedRaids, 4);
+  assert.equal(result.history.events.find((event) => event.eventId === failed.eventId)?.entries[1]?.status, "Absent");
+});
+
+test("returns the latest eight raids from six final archives and two saved legacy snapshots", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pizzawarriors-eight-week-history-"));
+  try {
+    const store = new FinalAttendanceStore(join(directory, "final-attendance.json"));
+    const finals = Array.from({ length: 6 }, (_, index) => snapshot(
+      `1234567890123457${index}`,
+      baseNow - (index + 1) * 24 * 60 * 60_000,
+    ));
+    for (const source of finals) {
+      const event = fresh(source, { signups: [
+        { ...memberA, status: "Signed" },
+        { ...memberB, status: "Signed" },
+      ] });
+      await store.capture({ guildId, event, snapshot: source, now: finalAttendanceDueAt(event)! });
+    }
+    const legacyA = {
+      ...snapshot("123456789012345780", baseNow - 7 * 24 * 60 * 60_000),
+      entries: [
+        { ...memberA, status: "Missing" as const },
+        { ...memberB, status: "Signed" as const },
+      ],
+    };
+    const legacyB = snapshot("123456789012345781", baseNow - 8 * 24 * 60 * 60_000);
+    const outsideWindow = snapshot("123456789012345789", baseNow - 9 * 24 * 60 * 60_000);
+    const fetched: string[] = [];
+
+    const result = await refreshRaidAttendance({
+      roster: roster(), sourceEvents: [outsideWindow, legacyB, legacyA], guildId, limit: 8, now: baseNow, finalStore: store,
+      fetchEvent: async (id) => {
+        fetched.push(id);
+        const source = finals.find((candidate) => candidate.eventId === id);
+        if (!source) throw new Error("legacy Raid-Helper event was deleted");
+        return fresh(source, { signups: [
+          { ...memberA, status: "Signed" },
+          { ...memberB, status: "Signed" },
+        ] });
+      },
+    });
+
+    assert.equal(result.requestedRaids, 8);
+    assert.deepEqual(result.history.events.map((event) => event.eventId), [
+      legacyB.eventId,
+      legacyA.eventId,
+      ...finals.map((event) => event.eventId).reverse(),
+    ]);
+    assert.deepEqual(result.unavailableEventIds, []);
+    assert.equal(fetched.includes(outsideWindow.eventId), false, "the eight-week window must not expand to older candidates");
+    assert.deepEqual(perfectAttendanceMembers(result), [], "a legacy Missing status must block 100% attendance");
+    assert.deepEqual(
+      result.history.members.find((member) => member.discordUserId === newcomer.discordUserId)?.statuses,
+      Array.from({ length: 8 }, () => undefined),
+      "members who joined later must remain untracked in historical records",
+    );
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("does not substitute an old-enough snapshot while a valid provider event is still in progress", async () => {
+  const ongoing = snapshot("123456789012345784", baseNow - 19 * 60 * 60_000);
+  ongoing.entries[0]!.status = "Signed";
+  const completed = snapshot("123456789012345785", baseNow - 30 * 60 * 60_000);
+  const result = await refreshRaidAttendance({
+    roster: roster(), sourceEvents: [completed, ongoing], guildId, limit: 2, now: baseNow,
+    fetchEvent: async (id) => id === ongoing.eventId
+      ? fresh(ongoing, { endsAt: baseNow + 60_000, signups: [{ ...memberA, status: "Signed" }] })
+      : fresh(completed, { signups: [{ ...memberA, status: "Signed" }] }),
+  });
+
+  assert.deepEqual(result.history.events.map((event) => event.eventId), [completed.eventId]);
+  assert.equal(result.requestedRaids, 1);
+  assert.deepEqual(result.unavailableEventIds, []);
+});
+
+test("excludes invalid IDs and non-core saved candidates before fetching attendance", async () => {
+  const invalid = snapshot("not-a-discord-id", baseNow - 20 * 60 * 60_000);
+  const nonCore = { ...snapshot("123456789012345786", baseNow - 21 * 60 * 60_000), title: "Community Alt Run" };
+  const valid = snapshot("123456789012345787", baseNow - 22 * 60 * 60_000);
+  const fetched: string[] = [];
+  const result = await refreshRaidAttendance({
+    roster: roster(), sourceEvents: [valid, nonCore, invalid], guildId, now: baseNow,
+    fetchEvent: async (id) => {
+      fetched.push(id);
+      if (id !== valid.eventId) throw new Error("invalid candidates must not be fetched");
+      return fresh(valid, { signups: [{ ...memberA, status: "Signed" }] });
+    },
+  });
+
+  assert.deepEqual(fetched, [valid.eventId]);
+  assert.deepEqual(result.history.events.map((event) => event.eventId), [valid.eventId]);
+  assert.deepEqual(result.unavailableEventIds, []);
+});
+
+test("prefers a durable final archive over a stale saved snapshot", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pizzawarriors-final-precedence-"));
+  try {
+    const store = new FinalAttendanceStore(join(directory, "final-attendance.json"));
+    const stale = snapshot("123456789012345782", baseNow - 24 * 60 * 60_000);
+    stale.entries[0]!.status = "Missing";
+    const archiveBasis = snapshot(stale.eventId, stale.startsAt);
+    const event = fresh(archiveBasis, { signups: [
+      { ...memberA, status: "Tentative" },
+      { ...memberB, status: "Signed" },
+    ] });
+    await store.capture({ guildId, event, snapshot: archiveBasis, now: finalAttendanceDueAt(event)! });
+
+    const result = await refreshRaidAttendance({
+      roster: roster(), sourceEvents: [stale], guildId, now: baseNow, finalStore: store,
+      fetchEvent: async () => { throw new Error("offline"); },
+    });
+
+    assert.equal(result.history.events[0]?.entries[0]?.status, "Tentative");
+    assert.equal((await store.get(guildId, stale.eventId))?.event.entries[0]?.status, "Tentative");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("reads a legacy snapshot without mutating it or promoting it into the final archive", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "pizzawarriors-legacy-readonly-"));
+  try {
+    const store = new FinalAttendanceStore(join(directory, "final-attendance.json"));
+    const source = snapshot("123456789012345783", baseNow - 24 * 60 * 60_000);
+    const original = structuredClone(source);
+
+    const result = await refreshRaidAttendance({
+      roster: roster(), sourceEvents: [source], guildId, now: baseNow, finalStore: store,
+      fetchEvent: async () => { throw new Error("deleted"); },
+    });
+
+    assert.equal(result.requestedRaids, 1);
+    assert.deepEqual(result.history.events[0], original);
+    assert.deepEqual(source, original);
+    assert.deepEqual(await store.list(guildId), [], "legacy fallback must remain separate from durable final records");
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("requires the unknown-end eighteen-hour safety window plus five-minute grace", async () => {
+  const threshold = 18 * 60 * 60_000 + 5 * 60_000;
+  const safelyCompleted = snapshot("123456789012345788", baseNow - threshold);
+  const stillInsideGrace = snapshot("123456789012345798", baseNow - threshold + 1);
+  const result = await refreshRaidAttendance({
+    roster: roster(), sourceEvents: [safelyCompleted, stillInsideGrace], guildId, limit: 2, now: baseNow,
+    fetchEvent: async () => { throw new Error("deleted"); },
+  });
+
+  assert.deepEqual(result.history.events.map((event) => event.eventId), [safelyCompleted.eventId]);
+  assert.deepEqual(result.unavailableEventIds, []);
 });
 
 test("a recent failed read is neither historical attendance nor unavailable coverage", async () => {
@@ -156,7 +309,7 @@ test("a recent failed read is neither historical attendance nor unavailable cove
   assert.deepEqual(result.history.events.map((event) => event.eventId), [completed.eventId]);
 });
 
-test("falls back only to a durable final record on provider outage", async () => {
+test("falls back to a durable final record on provider outage", async () => {
   const directory = await mkdtemp(join(tmpdir(), "pizzawarriors-final-refresh-"));
   try {
     const store = new FinalAttendanceStore(join(directory, "final-attendance.json"));

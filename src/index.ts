@@ -417,7 +417,7 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
         embeds: [],
         files: [new AttachmentBuilder(card, {
           name: cardName,
-          description: "Private Pizza Core attendance from saved final raid rosters",
+          description: "Private Pizza Core attendance from saved raid records",
         })],
       });
     } catch (error) {

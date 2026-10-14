@@ -43,7 +43,7 @@ The completed-raid report preserves these meanings:
 - **Missing / no signup**: no call/no show; the core member did not appear anywhere in that Raid-Helper event record.
 - **Not tracked**: the member was not part of the saved core roster for that historical snapshot.
 
-`/attendance` uses one window containing only completed raids with final rosters. It uses the current final Raid-Helper record when available and the durable final-roster archive otherwise. Upcoming and ongoing events are excluded, and older events with no available final roster are omitted. The card's count, date range, totals, date columns, review table, and recognition section all use the same included window.
+`/attendance` uses one window of completed raids. It prefers the current final Raid-Helper record, then the durable final-roster archive. Older saved attendance snapshots are a fallback when neither final source is available; their original statuses and historical membership remain unchanged, and they are not promoted into final archives. Upcoming and ongoing events are excluded, and only raids with no usable record are omitted. The card's count, date range, totals, date columns, review table, and recognition section all use the same included window.
 
 The green **100% attendance** section requires every status in the nonempty included window to be Signed or Tentative and shows `100% · N/N`. A Missing, Absent, Late, Bench, or untracked historical event blocks recognition. Each review-row attendance denominator counts only the historical events in which that member was tracked.
 
