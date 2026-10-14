@@ -4,7 +4,7 @@ import {
   type CoreAttendanceEvent,
   type CoreAttendanceHistory,
 } from "./core-attendance.js";
-import type { CoreRosterSnapshot } from "./core-roster.js";
+import type { CoreRosterSnapshot, CoreRosterStatus } from "./core-roster.js";
 import { getRaidHelperEvent, isPizzaCoreEventTitle, type RaidHelperEvent } from "./ready.js";
 
 const DEFAULT_RAID_LIMIT = 8;
@@ -15,8 +15,28 @@ export type RaidAttendanceSummary = {
   history: CoreAttendanceHistory;
   requestedRaids: number;
   unavailableRaids: number;
+  /**
+   * Saved snapshot IDs whose final Raid-Helper roster could not be verified.
+   * With a valid guild these IDs identify fallback rows in `history.events`.
+   * An invalid guild fails closed, so IDs are reported without history rows.
+   */
+  unavailableEventIds: string[];
   refreshedAt: number;
 };
+
+export function isAttendedStatus(status: CoreRosterStatus | undefined): boolean {
+  return status === "Signed" || status === "Tentative";
+}
+
+/** Select full-window attendance candidates; callers must disclose unavailable rows. */
+export function perfectAttendanceMembers(summary: RaidAttendanceSummary): CoreAttendanceHistory["members"] {
+  const { events, members } = summary.history;
+  if (summary.requestedRaids <= 0 || events.length !== summary.requestedRaids) return [];
+  return members.filter((member) => (
+    member.statuses.length === summary.requestedRaids
+    && member.statuses.every(isAttendedStatus)
+  ));
+}
 
 function boundedLimit(value: number | undefined): number {
   return Math.min(Math.max(Math.trunc(value ?? DEFAULT_RAID_LIMIT), 1), MAX_RAID_LIMIT);
@@ -75,17 +95,28 @@ export async function refreshRaidAttendance(input: {
     .sort((left, right) => right.startsAt - left.startsAt || right.capturedAt - left.capturedAt)
     .slice(0, MAX_RAID_LIMIT);
   if (!validDiscordId(input.guildId)) {
-    const unavailableRaids = Math.min(target, candidates.filter((event) => isSafelyHistorical(event, refreshedAt)).length);
+    const unavailableEventIds = candidates
+      .filter((event) => isSafelyHistorical(event, refreshedAt))
+      .slice(0, target)
+      .map((event) => event.eventId);
     return {
       history: buildCoreAttendanceHistory(input.roster, [], MAX_RAID_LIMIT),
-      requestedRaids: unavailableRaids,
-      unavailableRaids,
+      requestedRaids: unavailableEventIds.length,
+      unavailableRaids: unavailableEventIds.length,
+      unavailableEventIds,
       refreshedAt,
     };
   }
   const events: CoreAttendanceEvent[] = [];
+  const unavailableEventIds: string[] = [];
   let requestedRaids = 0;
   let unavailableRaids = 0;
+  const retainUnavailable = (snapshot: CoreAttendanceEvent): void => {
+    requestedRaids++;
+    unavailableRaids++;
+    unavailableEventIds.push(snapshot.eventId);
+    events.push(snapshot);
+  };
 
   for (const snapshot of candidates) {
     if (requestedRaids >= target) break;
@@ -94,22 +125,19 @@ export async function refreshRaidAttendance(input: {
       event = await fetchEvent(snapshot.eventId);
     } catch {
       if (!isSafelyHistorical(snapshot, refreshedAt)) continue;
-      requestedRaids++;
-      unavailableRaids++;
+      retainUnavailable(snapshot);
       continue;
     }
 
     if (!verifiesSnapshot(event, snapshot, input.guildId)) {
       if (!isSafelyHistorical(snapshot, refreshedAt)) continue;
-      requestedRaids++;
-      unavailableRaids++;
+      retainUnavailable(snapshot);
       continue;
     }
 
     const endsAt = completionTime(event);
     if (endsAt === undefined) {
-      requestedRaids++;
-      unavailableRaids++;
+      retainUnavailable(snapshot);
       continue;
     }
     if (endsAt > refreshedAt) continue;
@@ -122,6 +150,7 @@ export async function refreshRaidAttendance(input: {
     history: buildCoreAttendanceHistory(input.roster, events, MAX_RAID_LIMIT),
     requestedRaids,
     unavailableRaids,
+    unavailableEventIds,
     refreshedAt,
   };
 }

@@ -35,15 +35,19 @@ Run `/attendance` to receive a private officer report for the latest eight Pizza
 
 Current/upcoming Pizza Core `/ready` runs create or refresh one saved snapshot keyed by the Raid-Helper event ID, after verifying that the event belongs to this Discord server. Running `/ready` repeatedly for the same event updates that week instead of creating duplicates. Neither role mode nor roster-post mode retroactively backfills older raids using today's membership. Explicit historical or foreign-event views do not compare today's core, rewrite saved history, change the default core event, or offer reminder buttons.
 
-The history preserves these meanings:
+The completed-raid report preserves these meanings:
 
-- **Missing / no signup**: the core member did not appear anywhere in the Raid-Helper event.
-- **Absent, tentative, bench, or late**: the member deliberately selected that response.
+- **Signed or Tentative**: attended.
+- **Late or Bench**: did not attend.
+- **Absent**: declared absence.
+- **Missing / no signup**: no call/no show; the core member did not appear anywhere in that Raid-Helper event record.
 - **Not tracked**: the member was not part of the saved core roster for that historical snapshot.
 
-The **Attended every raid** section uses the raid leader's updated Raid-Helper rosters as the attendance record. Completed events are refreshed on every `/attendance` invocation; only **Signed** counts as attended. Late, Tentative, Bench, Absent, and missing entries do not qualify. Upcoming and ongoing events are excluded, with the completed date range and count shown separately from signup history. For legacy events without a usable end time or positive duration, the bot waits 18 hours after the start before treating them as completed.
+`/attendance` uses one window containing only completed raids. Completed events are refreshed on every invocation; upcoming and ongoing events are excluded. The card's totals, date columns, review table, and recognition section all use that same window. For legacy events without a usable end time or positive duration, the bot waits 18 hours after the start before treating them as completed.
 
-If an event has been deleted or cannot be verified, the card explicitly reports the excluded record and labels highlights **Attended every verified raid**. The percentage applies only to the displayed verified raids. A pre-raid snapshot is never substituted for an unavailable attendance record. Historical roster membership and saved signup responses are preserved; completed-event refreshes do not write to Raid-Helper or the local history file.
+The green recognition section requires every recorded status in the nonempty window to be Signed or Tentative. With complete refreshed coverage it is labelled **100% attendance** and shows `100% · N/N`. If an event has been deleted or cannot be refreshed, its saved snapshot stays in the window and its date and statuses are marked `*`. The section then becomes **No recorded attendance misses**, badges read `N/N recorded`, and the entire card suppresses percentages. A saved-only Missing status still blocks recognition. These fallback values show the saved record and are not presented as a verified final roster.
+
+Historical roster membership and saved responses remain attached to their original event; today's role does not backfill older membership. Completed-event refreshes do not write to Raid-Helper or the local history file.
 
 ## Notification safeguards
 

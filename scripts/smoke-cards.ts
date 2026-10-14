@@ -57,6 +57,7 @@ const signups: RaidSignup[] = [
   signup(6, "Tentative Raider", "Tentative"),
   signup(7, "Absent Raider", "Absent"),
   signup(8, "Benched Raider", "Bench"),
+  signup(9, "Late Raider", "Late"),
 ];
 const coreRoster: CoreRosterSnapshot = {
   sourceChannelId: "123456789012346000", sourceMessageId: "123456789012346001",
@@ -64,7 +65,7 @@ const coreRoster: CoreRosterSnapshot = {
   updatedAt: fixtureNow,
   members: [
     ...signups.filter((member) => member.displayName !== "Guest Mage").map(({ discordUserId, displayName }) => ({ discordUserId, displayName })),
-    { discordUserId: "123456789012345009", displayName: "Missing Raider" },
+    { discordUserId: "123456789012345010", displayName: "Missing Raider" },
   ],
 };
 const coreAudit = auditCoreRoster(coreRoster, signups);
@@ -90,16 +91,17 @@ const events: CoreAttendanceEvent[] = Array.from({ length: 4 }, (_, week) => ({
   })),
 }));
 const history = buildCoreAttendanceHistory(coreRoster, events);
-const completedEvents = events.map((event) => ({
+const completedEvents = events.map((event, eventIndex) => ({
   ...event,
-  entries: event.entries.map((entry) => entry.discordUserId === signups[0]!.discordUserId
+  entries: event.entries.map((entry) => entry.discordUserId === signups[0]!.discordUserId && eventIndex > 0
     ? { ...entry, status: "Signed" as const }
     : entry),
 }));
 const attendance: RaidAttendanceSummary = {
   history: buildCoreAttendanceHistory(coreRoster, completedEvents),
   requestedRaids: completedEvents.length,
-  unavailableRaids: 0,
+  unavailableRaids: 1,
+  unavailableEventIds: [completedEvents[0]!.eventId],
   refreshedAt: fixtureNow,
 };
 const profile: UpgradeProfile = {
@@ -159,9 +161,26 @@ chromium.launch = async (options) => {
         const inspection = await page.evaluate((literal) => ({
           injectedElements: document.querySelectorAll("[data-smoke-injected]").length,
           containsLiteralName: document.querySelector(".card")?.textContent?.includes(literal),
+          isAttendance: document.querySelector(".title")?.textContent === "Pizza Core Attendance",
+          attendanceText: document.querySelector(".card")?.textContent ?? "",
+          savedOnlyDates: document.querySelectorAll(".event-date.saved-only").length,
+          savedOnlyStatuses: document.querySelectorAll(".status.saved-only").length,
+          leaderNames: [...document.querySelectorAll(".attended-member span")].map((node) => node.textContent),
+          redundantSignupSections: document.querySelectorAll(".signup-perfect").length,
         }), injectionText);
         assert.equal(inspection.injectedElements, 0);
         assert.equal(inspection.containsLiteralName, true);
+        if (inspection.isAttendance) {
+          assert.equal(inspection.attendanceText.includes("%"), false, "partial coverage must suppress every percentage claim");
+          assert.equal(inspection.attendanceText.includes("No recorded attendance misses"), true);
+          assert.equal(inspection.savedOnlyDates, 1);
+          assert.ok(inspection.savedOnlyStatuses > 0);
+          assert.ok(inspection.leaderNames.includes("Tentative Raider"), "Tentative must count as attended");
+          assert.equal(inspection.leaderNames.includes("Late Raider"), false);
+          assert.equal(inspection.leaderNames.includes("Benched Raider"), false);
+          assert.equal(inspection.leaderNames.includes(injectionText), false, "saved-only Missing must block recognition");
+          assert.equal(inspection.redundantSignupSections, 0);
+        }
         htmlChecks++;
       };
       return page;

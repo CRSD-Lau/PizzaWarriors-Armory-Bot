@@ -28,7 +28,7 @@ import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
 import { formatCharacterSpecialization } from "./character.js";
 import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
-import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
+import { CoreAttendanceStore } from "./core-attendance.js";
 import { refreshRaidAttendance } from "./raid-attendance.js";
 import { CoreRoleRosterError, fetchCoreRoleMembers, roleBackedCoreRoster } from "./core-role.js";
 import { fetchRaidHelperCandidateIds, RaidHelperDiscoveryError } from "./raid-helper-discovery.js";
@@ -70,7 +70,7 @@ const readyCommand = new SlashCommandBuilder()
 
 const attendanceCommand = new SlashCommandBuilder()
   .setName("attendance")
-  .setDescription("Privately review Pizza Core attendance and signup history")
+  .setDescription("Privately review Pizza Core attendance records")
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents)
   .setDMPermission(false)
   .addIntegerOption((option) => option.setName("weeks").setDescription("Number of weekly raids to show (default: 8)").setMinValue(2).setMaxValue(12));
@@ -375,12 +375,16 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
       // A current role or edited roster post cannot prove who was core in a
       // previous raid. Preserve the membership captured for each event.
       const sourceEvents = await coreAttendance.list(interaction.guildId);
-      const history = buildCoreAttendanceHistory(roster, sourceEvents, weeks);
-      if (!history.events.length) {
+      if (!sourceEvents.length) {
         await interaction.editReply("No Pizza Core history has been captured yet. Run **/ready** for the current Pizza Core event; future weekly runs will update this private report automatically.");
         return;
       }
       const attendance = await refreshRaidAttendance({ roster, sourceEvents, guildId: interaction.guildId, limit: weeks });
+      const history = attendance.history;
+      if (!history.events.length) {
+        await interaction.editReply("No completed Pizza Core raids are available yet. Upcoming and ongoing raids do not count toward attendance.");
+        return;
+      }
       const cardName = `pizza-core-attendance-${history.events.at(-1)?.eventId ?? "history"}.png`;
       const card = await cards.renderAttendance({ history, attendance });
       await interaction.editReply({
@@ -388,7 +392,7 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
         embeds: [],
         files: [new AttachmentBuilder(card, {
           name: cardName,
-          description: "Private Pizza Core attendance from updated Raid-Helper records and saved signup history",
+          description: "Private Pizza Core attendance from completed Raid-Helper events, with unavailable records marked as saved snapshots",
         })],
       });
     } catch (error) {

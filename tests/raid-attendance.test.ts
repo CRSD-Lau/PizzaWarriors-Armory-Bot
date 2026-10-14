@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { CoreAttendanceEvent } from "../src/core-attendance.js";
-import { refreshRaidAttendance } from "../src/raid-attendance.js";
+import { isAttendedStatus, perfectAttendanceMembers, refreshRaidAttendance } from "../src/raid-attendance.js";
 import type { CoreRosterSnapshot } from "../src/core-roster.js";
 import type { RaidHelperEvent } from "../src/ready.js";
 
@@ -64,6 +64,7 @@ test("refreshes completed status from Raid-Helper while preserving the event-tim
 
   assert.equal(result.requestedRaids, 1);
   assert.equal(result.unavailableRaids, 0);
+  assert.deepEqual(result.unavailableEventIds, []);
   assert.equal(result.history.events.length, 1);
   assert.deepEqual(result.history.events[0], {
     ...original,
@@ -135,6 +136,7 @@ test("skips future and in-progress raids, then fills the window from older compl
   assert.deepEqual(result.history.events.map((event) => event.eventId), [explicitComplete.eventId, unknownEndComplete.eventId]);
   assert.equal(result.requestedRaids, 2);
   assert.equal(result.unavailableRaids, 0);
+  assert.deepEqual(result.unavailableEventIds, []);
 });
 
 test("keeps failed and unverifiable reads in coverage without an older success hiding them", async () => {
@@ -155,9 +157,10 @@ test("keeps failed and unverifiable reads in coverage without an older success h
   });
 
   assert.deepEqual(fetched, [failed.eventId, wrongGuild.eventId, olderSuccess.eventId]);
-  assert.deepEqual(result.history.events.map((event) => event.eventId), [olderSuccess.eventId]);
+  assert.deepEqual(result.history.events.map((event) => event.eventId), [olderSuccess.eventId, wrongGuild.eventId, failed.eventId]);
   assert.equal(result.requestedRaids, 3);
   assert.equal(result.unavailableRaids, 2);
+  assert.deepEqual(result.unavailableEventIds, [failed.eventId, wrongGuild.eventId]);
 });
 
 test("a recent unreadable raid does not displace an older completed raid", async () => {
@@ -176,7 +179,81 @@ test("a recent unreadable raid does not displace an older completed raid", async
   assert.deepEqual(fetched, [recentUnreadable.eventId, completed.eventId]);
   assert.equal(result.requestedRaids, 1);
   assert.equal(result.unavailableRaids, 0);
+  assert.deepEqual(result.unavailableEventIds, []);
   assert.deepEqual(result.history.events.map((event) => event.eventId), [completed.eventId]);
+});
+
+test("retains an unavailable saved Missing row with its event-time name and provenance", async () => {
+  const now = 90_000_000;
+  const source = snapshot("123456789012345646", now - 24 * 60 * 60_000);
+  source.entries = [{ discordUserId: memberA.discordUserId, displayName: "Saved Alpha", status: "Missing" }];
+  const original = structuredClone(source);
+  const result = await refreshRaidAttendance({
+    roster: roster([{ discordUserId: memberA.discordUserId, displayName: "Current Alpha" }]),
+    sourceEvents: [source], guildId, now,
+    fetchEvent: async () => { throw new Error("404"); },
+  });
+  assert.deepEqual(result.history.events, [original]);
+  assert.deepEqual(result.unavailableEventIds, [source.eventId]);
+  assert.equal(result.unavailableRaids, 1);
+  assert.equal(result.history.members[0]?.displayName, "Current Alpha");
+  assert.deepEqual(result.history.members[0]?.statuses, ["Missing"]);
+  assert.deepEqual(source, original, "fallback provenance must not mutate the saved snapshot");
+});
+
+test("uses Signed or Tentative for a complete eight-event attendance window without shrinking unavailable rows", async () => {
+  const now = 900_000_000;
+  const always = { discordUserId: "123456789012345701", displayName: "Always" };
+  const late = { discordUserId: "123456789012345702", displayName: "Late once" };
+  const bench = { discordUserId: "123456789012345703", displayName: "Benched once" };
+  const absent = { discordUserId: "123456789012345704", displayName: "Absent once" };
+  const missing = { discordUserId: "123456789012345705", displayName: "Missing once" };
+  const newcomer = { discordUserId: "123456789012345706", displayName: "Newcomer" };
+  const members = [always, late, bench, absent, missing];
+  const sources = Array.from({ length: 8 }, (_, index): CoreAttendanceEvent => ({
+    ...snapshot(`12345678901234572${index}`, now - (19 * 60 * 60_000 + index * 100_000)),
+    entries: members.map((member) => ({
+      ...member,
+      status: member === always
+        ? (index % 2 === 0 ? "Signed" : "Tentative")
+        : index !== 0
+          ? "Signed"
+          : member === late
+            ? "Late"
+            : member === bench
+              ? "Bench"
+              : member === absent
+                ? "Absent"
+                : "Missing",
+    })),
+  }));
+  const unavailable = sources[3]!;
+  const result = await refreshRaidAttendance({
+    roster: roster([...members, newcomer]), sourceEvents: sources, guildId, now,
+    fetchEvent: async (id) => {
+      const source = sources.find((event) => event.eventId === id)!;
+      if (source === unavailable) throw new Error("historical event unavailable");
+      return fresh(source, {
+        endsAt: now - 1,
+        signups: source.entries.flatMap((entry) => entry.status === "Missing" ? [] : [{
+          discordUserId: entry.discordUserId,
+          displayName: entry.displayName,
+          status: entry.status,
+        }]),
+      });
+    },
+  });
+
+  assert.equal(isAttendedStatus("Signed"), true);
+  assert.equal(isAttendedStatus("Tentative"), true);
+  for (const status of ["Late", "Bench", "Absent", "Missing", undefined] as const) assert.equal(isAttendedStatus(status), false);
+  assert.equal(result.requestedRaids, 8);
+  assert.equal(result.history.events.length, 8);
+  assert.deepEqual(result.unavailableEventIds, [unavailable.eventId]);
+  assert.deepEqual(perfectAttendanceMembers(result).map((member) => member.displayName), [always.displayName]);
+  assert.deepEqual(perfectAttendanceMembers({ ...result, requestedRaids: 9 }), [], "an incomplete window cannot produce perfect attendance");
+  assert.equal(result.history.members.find((member) => member.discordUserId === late.discordUserId)?.statuses.length, 8);
+  assert.equal(result.history.members.find((member) => member.discordUserId === newcomer.discordUserId)?.trackedCount, 0);
 });
 
 test("rejects each event identity mismatch and fails closed without a guild", async () => {
@@ -198,9 +275,9 @@ test("rejects each event identity mismatch and fails closed without a guild", as
   });
   assert.equal(result.requestedRaids, 5);
   assert.equal(result.unavailableRaids, 5);
-  assert.equal(result.history.events.length, 0);
+  assert.equal(result.history.events.length, 5);
   assert.equal(result.history.members.length, 2);
-  assert.equal(result.history.members.every((member) => member.trackedCount === 0 && member.statuses.length === 0), true);
+  assert.deepEqual(result.unavailableEventIds, sources.map((source) => source.eventId));
 
   let calls = 0;
   const noGuild = await refreshRaidAttendance({
@@ -210,5 +287,6 @@ test("rejects each event identity mismatch and fails closed without a guild", as
   assert.equal(calls, 0);
   assert.equal(noGuild.requestedRaids, 3);
   assert.equal(noGuild.unavailableRaids, 3);
+  assert.deepEqual(noGuild.unavailableEventIds, sources.slice(0, 3).map((source) => source.eventId));
   assert.equal(noGuild.history.events.length, 0);
 });
