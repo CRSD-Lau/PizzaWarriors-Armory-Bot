@@ -18,6 +18,7 @@ data/raider-links.json
 data/recent-ready-events.json
 data/core-rosters.json
 data/core-attendance.json
+data/final-attendance.json
 data/*.tmp
 coverage/
 *.tsbuildinfo

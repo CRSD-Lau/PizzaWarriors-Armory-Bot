@@ -28,7 +28,10 @@ import { getGuildRoster, guildArmoryUrl, type GuildRoster } from "./guild.js";
 import { gearScoreTier } from "./score-tiers.js";
 import { formatCharacterSpecialization } from "./character.js";
 import { auditCoreRoster, CORE_PING_COOLDOWN_MS, coreReminderText, CoreRosterStore, type CoreRosterAudit, type CoreRosterSnapshot } from "./core-roster.js";
-import { buildCoreAttendanceHistory, CoreAttendanceStore } from "./core-attendance.js";
+import { CoreAttendanceStore } from "./core-attendance.js";
+import { refreshRaidAttendance } from "./raid-attendance.js";
+import { FinalAttendanceStore } from "./final-attendance.js";
+import { AttendanceCollector } from "./attendance-collector.js";
 import { CoreRoleRosterError, fetchCoreRoleMembers, roleBackedCoreRoster } from "./core-role.js";
 import { fetchRaidHelperCandidateIds, RaidHelperDiscoveryError } from "./raid-helper-discovery.js";
 import { collectSuccessful, handleInteractionSafely, OperationAdmission, updateAfterAcknowledgement } from "./interaction-safety.js";
@@ -69,7 +72,7 @@ const readyCommand = new SlashCommandBuilder()
 
 const attendanceCommand = new SlashCommandBuilder()
   .setName("attendance")
-  .setDescription("Privately review Pizza Core signup response history")
+  .setDescription("Privately review Pizza Core attendance records")
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageEvents)
   .setDMPermission(false)
   .addIntegerOption((option) => option.setName("weeks").setDescription("Number of weekly raids to show (default: 8)").setMinValue(2).setMaxValue(12));
@@ -107,6 +110,7 @@ const raiderLinks = new RaiderLinks();
 const recentReadyEvents = new RecentReadyEvents();
 const coreRosters = new CoreRosterStore();
 const coreAttendance = new CoreAttendanceStore();
+const finalAttendance = new FinalAttendanceStore();
 const discordRest = new REST({ version: "10" }).setToken(config.discordToken);
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildVoiceStates], allowedMentions: { parse: [], repliedUser: false } });
 const music = new MusicService(client, new MusicSources({
@@ -140,14 +144,18 @@ async function currentCoreRoster(guildId: string): Promise<CoreRosterSnapshot | 
   return roleBackedCoreRoster({ guildId, roleId: config.pizzaCoreRoleId, members, ...(previous ? { previous } : {}) });
 }
 
-async function discoverCurrentCoreEvent(guildId: string): Promise<RaidHelperEvent | undefined> {
-  if (!config.raidHelperChannelId) return undefined;
+async function discoverCoreEvents(guildId: string): Promise<RaidHelperEvent[]> {
+  if (!config.raidHelperChannelId) return [];
   const candidateIds = await fetchRaidHelperCandidateIds(discordRest, guildId, config.raidHelperChannelId, RAID_HELPER_BOT_ID);
   const events = await collectSuccessful(candidateIds, getRaidHelperEvent, 3);
   // These candidates were verified against this guild's Discord forum/channel.
   // Retain that provenance if an older provider response lacks server metadata.
-  return selectCurrentPizzaCoreEvent(events.filter((event) => !event.guildId || event.guildId === guildId)
-    .map((event) => ({ ...event, guildId })));
+  return events.filter((event) => !event.guildId || event.guildId === guildId)
+    .map((event) => ({ ...event, guildId }));
+}
+
+async function discoverCurrentCoreEvent(guildId: string): Promise<RaidHelperEvent | undefined> {
+  return selectCurrentPizzaCoreEvent(await discoverCoreEvents(guildId));
 }
 
 async function recordCoreAttendance(
@@ -156,6 +164,8 @@ async function recordCoreAttendance(
   audit: CoreRosterAudit,
 ): Promise<void> {
   if (!isCurrentGuildCoreEvent(event, guildId)) return;
+  // Once a raid starts, today's role cannot replace that raid's frozen membership.
+  if (event.startsAt === undefined || event.startsAt <= Date.now()) return;
   try {
     await coreAttendance.record({
       guildId,
@@ -205,7 +215,27 @@ async function registerCommand(): Promise<void> {
   await discordRest.put(route, { body: [command.toJSON(), upgradeCommand.toJSON(), readyCommand.toJSON(), attendanceCommand.toJSON(), raiderCommand.toJSON(), rosterCommand.toJSON(), coreRosterCommand.toJSON(), ...musicCommands().map((entry) => entry.toJSON())] });
 }
 
-client.once(Events.ClientReady, () => console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`));
+const attendanceCollector = config.discordGuildId && config.raidHelperChannelId ? new AttendanceCollector({
+  guildId: config.discordGuildId,
+  listSnapshots: () => coreAttendance.list(config.discordGuildId!),
+  listFinals: () => finalAttendance.list(config.discordGuildId!),
+  discoverEvents: () => discoverCoreEvents(config.discordGuildId!),
+  fetchEvent: getRaidHelperEvent,
+  currentRoster: () => currentCoreRoster(config.discordGuildId!),
+  saveSnapshot: (event, roster, now) => coreAttendance.record({
+    guildId: config.discordGuildId!, eventId: event.eventId, title: event.title,
+    startsAt: event.startsAt, audit: auditCoreRoster(roster, event.signups), capturedAt: now,
+  }),
+  saveFinal: async (event, snapshot, now) => Boolean(await finalAttendance.capture({
+    guildId: config.discordGuildId!, event, ...(snapshot ? { snapshot } : {}), now,
+  })),
+  onError: (error) => console.error("Automatic attendance capture failed", error),
+}) : undefined;
+
+client.once(Events.ClientReady, () => {
+  console.log(`PizzaWarriors Armory Bot is ready as ${client.user?.tag}.`);
+  attendanceCollector?.start();
+});
 client.on(Events.Error, (error) => console.error("Discord client error", error));
 client.on(Events.VoiceStateUpdate, (previous, current) => music.onVoiceStateUpdate(previous, current));
 client.on(Events.InteractionCreate, (interaction) => {
@@ -360,7 +390,7 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
   if (!interaction.isChatInputCommand()) return;
   if (interaction.commandName === "attendance") {
     if (!interaction.guildId || !canManageCore(interaction.memberPermissions)) {
-      await interaction.reply({ content: "Only members with Manage Events or Manage Server can view Pizza Core signup history.", flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content: "Only members with Manage Events or Manage Server can view Pizza Core attendance and signup history.", flags: MessageFlags.Ephemeral });
       return;
     }
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -372,27 +402,29 @@ async function handleInteraction(interaction: Interaction): Promise<void> {
       }
       const weeks = interaction.options.getInteger("weeks") ?? 8;
       // A current role or edited roster post cannot prove who was core in a
-      // previous raid. Only use snapshots actually captured for that event.
-      const history = buildCoreAttendanceHistory(roster, await coreAttendance.list(interaction.guildId, weeks), weeks);
+      // previous raid. Preserve the membership captured for each event.
+      const sourceEvents = await coreAttendance.list(interaction.guildId);
+      const attendance = await refreshRaidAttendance({ roster, sourceEvents, guildId: interaction.guildId, limit: weeks, finalStore: finalAttendance });
+      const history = attendance.history;
       if (!history.events.length) {
-        await interaction.editReply("No Pizza Core history has been captured yet. Run **/ready** for the current Pizza Core event; future weekly runs will update this private report automatically.");
+        await interaction.editReply("No completed Pizza Core attendance records are available yet. Final rosters are saved automatically after each raid.");
         return;
       }
       const cardName = `pizza-core-attendance-${history.events.at(-1)?.eventId ?? "history"}.png`;
-      const card = await cards.renderAttendance({ history });
+      const card = await cards.renderAttendance({ history, attendance });
       await interaction.editReply({
         content: "",
         embeds: [],
         files: [new AttachmentBuilder(card, {
           name: cardName,
-          description: "Private Pizza Core signup response history",
+          description: "Private Pizza Core attendance from saved raid records",
         })],
       });
     } catch (error) {
       console.error("Core attendance report failed", error);
       await interaction.editReply(error instanceof CoreRoleRosterError
         ? error.message
-        : "I could not build the private signup-history report. The saved history was left unchanged; try again in a moment.");
+        : "I could not build the private attendance report. The saved history was left unchanged; try again in a moment.");
     }
     return;
   }
@@ -622,7 +654,7 @@ createServer((request, response) => {
   }
   const healthy = client.isReady();
   response.writeHead(healthy ? 200 : 503, { "content-type": "application/json" });
-  response.end(JSON.stringify({ ok: healthy, discordReady: client.isReady(), music: music.health() }));
+  response.end(JSON.stringify({ ok: healthy, discordReady: client.isReady(), music: music.health(), attendance: attendanceCollector?.health() ?? { enabled: false } }));
 }).listen(config.port);
 
 await music.initialize();
@@ -631,6 +663,7 @@ await client.login(config.discordToken);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
+    await attendanceCollector?.stop();
     await music.close();
     await armory.close();
     await cards.close();
