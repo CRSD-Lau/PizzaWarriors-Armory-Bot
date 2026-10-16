@@ -8,7 +8,8 @@ import type { UpgradeProfile, UpgradeTarget } from "./upgrade.js";
 import type { RaidRole, RaidSignup, ReadyReport } from "./ready.js";
 import type { GuildRoster } from "./guild.js";
 import { activeSignupsOutsideCore, type CoreRosterAudit, type CoreRosterStatus } from "./core-roster.js";
-import type { CoreAttendanceHistory } from "./core-attendance.js";
+import type { CoreAttendanceHistory, CoreAttendanceMemberHistory } from "./core-attendance.js";
+import { isAttendedStatus, perfectAttendanceMembers, type RaidAttendanceSummary } from "./raid-attendance.js";
 import { gearScoreTier, itemGearScoreTier } from "./score-tiers.js";
 import { formatCharacterSpecialization } from "./character.js";
 import { screenshotCard } from "./card-rendering.js";
@@ -54,6 +55,21 @@ export function raidSignupNameColor(signup: Pick<RaidSignup, "reportedClass">, r
 
 function escapeHtml(value: string): string {
   return value.replace(/[&<>\"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
+/** Summarize only the historical events in which this member was tracked. */
+export function recordedAttendanceTally(member: CoreAttendanceMemberHistory): { attended: number; recorded: number } {
+  return {
+    attended: member.statuses.filter(isAttendedStatus).length,
+    recorded: member.trackedCount,
+  };
+}
+
+/** Format attendance without rounding an imperfect record up to 100%. */
+export function formatAttendancePercentage(attended: number, tracked: number): string {
+  if (tracked <= 0) return "0%";
+  if (attended === tracked) return "100%";
+  return `${(Math.floor((attended / tracked) * 1_000) / 10).toFixed(1)}%`;
 }
 
 function dataUrl(buffer: Buffer, mimeType: string): string {
@@ -311,36 +327,56 @@ export class ArmoryCardRenderer {
     });
   }
 
-  /** Render a private, current-core view of stored Raid-Helper response history. */
-  async renderAttendance(input: { history: CoreAttendanceHistory }): Promise<Buffer> {
+  /** Render one completed-raid attendance window from final Raid-Helper rosters. */
+  async renderAttendance(input: { history: CoreAttendanceHistory; attendance?: RaidAttendanceSummary }): Promise<Buffer> {
     return this.withBrowser(async (browser) => {
       const logo = await this.getLogo();
-      const { history } = input;
-      const cardWidth = Math.max(872, 340 + history.events.length * 62);
+      const summary: RaidAttendanceSummary = input.attendance ?? {
+        history: input.history,
+        requestedRaids: input.history.events.length,
+        unavailableRaids: 0,
+        unavailableEventIds: [],
+        refreshedAt: Date.now(),
+      };
+      const { history } = summary;
+      const eventCount = history.events.length;
+      const cardWidth = Math.max(872, 398 + eventCount * 62);
       const dateFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", timeZone: "America/Halifax" });
-      const gridColumns = `minmax(170px,1fr) repeat(${history.events.length},58px) 52px 52px`;
+      const gridColumns = `minmax(170px,1fr) repeat(${eventCount},58px) 62px 45px 45px`;
       const statusMeta: Record<CoreRosterStatus, { label: string; title: string; tone: string }> = {
-        Signed: { label: "✓", title: "Signed", tone: "signed" },
-        Late: { label: "L", title: "Late", tone: "late" },
-        Tentative: { label: "T", title: "Tentative", tone: "tentative" },
-        Bench: { label: "B", title: "Bench", tone: "bench" },
-        Absent: { label: "A", title: "Absent", tone: "absent" },
-        Missing: { label: "M", title: "No signup", tone: "missing" },
+        Signed: { label: "✓", title: "Signed · attended", tone: "signed" },
+        Tentative: { label: "T", title: "Tentative · attended", tone: "tentative" },
+        Late: { label: "L", title: "Late · did not attend", tone: "late" },
+        Bench: { label: "B", title: "Bench · did not attend", tone: "bench" },
+        Absent: { label: "A", title: "Absent · declared absence", tone: "absent" },
+        Missing: { label: "M", title: "Missing · no call/no show", tone: "missing" },
       };
       const statusBadge = (status: CoreRosterStatus | undefined) => {
-        if (!status) return `<span class="status untracked" title="Not on that saved core roster">—</span>`;
+        if (!status) return `<span class="status untracked" title="Not on that historical roster">—</span>`;
         const meta = statusMeta[status];
         return `<span class="status ${meta.tone}" title="${meta.title}">${meta.label}</span>`;
       };
       const eventHeaders = history.events.map((event) => `<span class="event-date" title="${escapeHtml(event.title)}"><b>${dateFormat.format(new Date(event.startsAt))}</b><small>${new Date(event.startsAt).getFullYear()}</small></span>`).join("");
-      const attentionMembers = history.members.filter((member) => member.missingCount > 0 || member.absentCount > 0);
+      const dateRange = eventCount
+        ? `${dateFormat.format(new Date(history.events[0]!.startsAt))} – ${dateFormat.format(new Date(history.events.at(-1)!.startsAt))}, Halifax time`
+        : "No completed raid dates available";
+      const leaders = [...perfectAttendanceMembers(summary)].sort((left, right) => left.displayName.localeCompare(right.displayName));
+      const leaderBadge = `100% · ${eventCount}/${eventCount}`;
+      const leaderItems = leaders.map((member) => `<div class="attended-member"><span>${escapeHtml(member.displayName)}</span><b>${leaderBadge}</b></div>`).join("")
+        || `<div class="empty-attendance-record">${eventCount ? "No member has a full-window record containing only Signed or Tentative." : "No completed raid records were available."}</div>`;
+      const trackedStatuses = history.members.reduce((total, member) => total + member.trackedCount, 0);
+      const attendedStatuses = history.members.reduce((total, member) => total + member.statuses.filter(isAttendedStatus).length, 0);
+      const attendanceValue = formatAttendancePercentage(attendedStatuses, trackedStatuses);
+      const attentionMembers = history.members.filter((member) => member.statuses.some((status) => status === "Missing" || status === "Absent" || status === "Bench" || status === "Late"));
       const rows = attentionMembers.map((member) => {
-        const tone = member.missingCount ? "attention" : member.absentCount ? "absence" : "reliable";
-        return `<div class="history-row" style="grid-template-columns:${gridColumns}"><span class="member-name ${tone}">${escapeHtml(member.displayName)}</span>${member.statuses.map(statusBadge).join("")}<span class="count missing-count">${member.missingCount}</span><span class="count absent-count">${member.absentCount}</span></div>`;
-      }).join("") || `<div class="empty-history">Every currently tracked core member has responded without an explicit absence in this window.</div>`;
+        const lateOrBench = member.statuses.some((status) => status === "Late" || status === "Bench");
+        const tone = member.missingCount ? "attention" : member.absentCount || lateOrBench ? "absence" : "reliable";
+        const tally = recordedAttendanceTally(member);
+        return `<div class="history-row" style="grid-template-columns:${gridColumns}"><span class="member-name ${tone}">${escapeHtml(member.displayName)}</span>${member.statuses.map(statusBadge).join("")}<span class="count attended-count">${tally.attended}/${tally.recorded}</span><span class="count missing-count">${member.missingCount}</span><span class="count absent-count">${member.absentCount}</span></div>`;
+      }).join("") || `<div class="empty-history">No Missing, Absent, Bench, or Late statuses appear in this completed-raid window.</div>`;
       const html = `<!doctype html><html><head><meta charset="utf-8"><style>
-        *{box-sizing:border-box}body{margin:0;padding:24px;background:#0b0e13;color:#f2f4f8;font-family:"Segoe UI",Arial,sans-serif}.card{width:${cardWidth}px;overflow:hidden;border:1px solid #323946;border-left:6px solid ${LEGENDARY};border-radius:14px;background:#151a22;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:28px}.brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:700}.brand img{width:38px;height:38px;object-fit:cover;border-radius:50%;border:1px solid rgba(255,128,0,.65)}.title{margin-top:24px;color:#45a5ff;font-size:34px;font-weight:800;letter-spacing:-.8px;line-height:1.08}.subtitle{margin-top:7px;color:#95a0b4;font-size:16px;font-weight:600}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin:22px 0;padding:18px 0;border-top:1px solid #303744;border-bottom:1px solid #303744}.stat{padding:0 16px;border-left:1px solid #303744}.stat:first-child{padding-left:0;border-left:0}.label{display:block;color:#a7b0c0;font-size:12px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}.value{display:block;margin-top:7px;color:#55aaff;font-size:29px;font-weight:800;letter-spacing:-.6px;line-height:1}.stat:nth-child(2) .value{color:${LEGENDARY}}.stat:nth-child(3) .value{color:#eb6c70}.stat:nth-child(4) .value{color:#4ce887}.sub{display:block;margin-top:6px;color:#c5ccd7;font-size:13px;font-weight:600}.section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:#c7d0dd;font-size:13px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}.section-title b{border-radius:5px;padding:4px 7px;background:#202937;color:${LEGENDARY};font-size:12px}.table{overflow:hidden;border:1px solid #303744;border-radius:9px;background:#111722}.history-head,.history-row{display:grid;align-items:center;gap:4px;padding:7px 9px}.history-head{grid-template-columns:${gridColumns};min-height:50px;color:#a7b0c0;font-size:10px;font-weight:800;letter-spacing:.55px;text-transform:uppercase}.history-row{min-height:39px;border-top:1px solid #2a303b;background:rgba(8,12,18,.15)}.member-name{overflow:hidden;color:#f1f3f7;font-size:13px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.member-name.attention{color:${LEGENDARY}}.member-name.absence{color:#eb8a8e}.event-date{display:grid;justify-items:center;line-height:1.05;text-transform:none}.event-date b{color:#c7d0dd;font-size:11px}.event-date small{margin-top:3px;color:#687386;font-size:9px}.status{justify-self:center;width:27px;border-radius:5px;padding:4px 0;text-align:center;background:#202937;font-size:12px;font-weight:900}.status.signed{color:#4ce887}.status.late{color:#55aaff}.status.tentative{color:#f2c94c}.status.bench{color:#69ccf0}.status.absent{color:#eb6c70}.status.missing{color:${LEGENDARY};background:rgba(255,128,0,.12)}.status.untracked{color:#586273;background:transparent}.count{justify-self:center;font-size:13px;font-weight:800}.missing-count{color:${LEGENDARY}}.absent-count{color:#eb6c70}.empty-history{padding:18px;border-top:1px solid #2a303b;color:#4ce887;font-size:13px;font-weight:700}.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:16px;color:#aeb8c8;font-size:11px}.legend span{display:flex;align-items:center;gap:6px}.legend b{display:inline-grid;width:20px;height:20px;place-items:center;border-radius:4px;background:#202937}.privacy{margin-top:16px;padding:12px 14px;border:1px solid #303744;border-radius:8px;background:#111722;color:#aeb8c8;font-size:12px;line-height:1.45}.privacy strong{color:#d9dfe9}.footer{margin-top:20px;padding-top:15px;border-top:1px solid #303744;color:#8994a6;font-size:12px}.footer strong{color:#d9dfe9}
-      </style></head><body><main class="card"><header class="brand"><img src="${logo}" alt="PizzaWarriors"><span>PizzaWarriors Officer Tools</span></header><div class="title">Pizza Core Signup History</div><div class="subtitle">Private officer report · Rolling ${history.events.length} raid${history.events.length === 1 ? "" : "s"}</div><div class="stats"><div class="stat"><span class="label">Raids tracked</span><span class="value">${history.events.length}</span><span class="sub">One snapshot per event</span></div><div class="stat"><span class="label">No signup</span><span class="value">${history.missingSignups}</span><span class="sub">Missing responses</span></div><div class="stat"><span class="label">Absent</span><span class="value">${history.explicitAbsences}</span><span class="sub">Selected in Raid-Helper</span></div><div class="stat"><span class="label">Response rate</span><span class="value">${history.responseRate}%</span><span class="sub">${history.reliableMembers}/${history.members.length} with no signup misses</span></div></div><div class="section-title"><span>Members needing review</span><b>${attentionMembers.length}</b></div><div class="table"><div class="history-head"><span>Core member</span>${eventHeaders}<span>Miss</span><span>Abs</span></div>${rows}</div><div class="legend"><span><b class="status signed">✓</b>Signed</span><span><b class="status late">L</b>Late</span><span><b class="status tentative">T</b>Tentative</span><span><b class="status bench">B</b>Bench</span><span><b class="status absent">A</b>Absent</span><span><b class="status missing">M</b>No signup</span><span><b class="status untracked">—</b>Not yet on saved roster</span></div><div class="privacy"><strong>What this proves:</strong> Missing means the member did not appear anywhere in that Raid-Helper event. Absent, tentative, and bench are deliberate selections. A true in-raid no-show cannot be inferred from signup data and is not silently recorded as one.</div><div class="footer"><strong>PizzaWarriors Core Attendance</strong> · Captured automatically by /ready · Stored privately on the bot host</div></main></body></html>`;
+        *{box-sizing:border-box}body{margin:0;padding:24px;background:#0b0e13;color:#f2f4f8;font-family:"Segoe UI",Arial,sans-serif}.card{width:${cardWidth}px;overflow:hidden;border:1px solid #323946;border-left:6px solid ${LEGENDARY};border-radius:14px;background:#151a22;box-shadow:0 18px 50px rgba(0,0,0,.35);padding:28px}.brand{display:flex;align-items:center;gap:12px;font-size:20px;font-weight:700}.brand img{width:38px;height:38px;object-fit:cover;border-radius:50%;border:1px solid rgba(255,128,0,.65)}.title{margin-top:24px;color:#45a5ff;font-size:34px;font-weight:800;letter-spacing:-.8px;line-height:1.08}.subtitle{margin-top:7px;color:#95a0b4;font-size:16px;font-weight:600}.stats{display:grid;grid-template-columns:repeat(4,1fr);margin:22px 0;padding:18px 0;border-top:1px solid #303744;border-bottom:1px solid #303744}.stat{padding:0 16px;border-left:1px solid #303744}.stat:first-child{padding-left:0;border-left:0}.label{display:block;color:#a7b0c0;font-size:12px;font-weight:700;letter-spacing:.7px;text-transform:uppercase}.value{display:block;margin-top:7px;color:#55aaff;font-size:29px;font-weight:800;letter-spacing:-.6px;line-height:1}.stat:nth-child(2) .value{color:${LEGENDARY}}.stat:nth-child(3) .value{color:#eb6c70}.stat:nth-child(4) .value{color:#4ce887}.sub{display:block;margin-top:6px;color:#c5ccd7;font-size:13px;font-weight:600}.section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;color:#4ce887;font-size:13px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}.section-title b{border-radius:5px;padding:4px 7px;background:rgba(76,232,135,.1);color:#4ce887;font-size:12px}.attendance-record-section{margin-bottom:18px;padding:12px 14px;border:1px solid rgba(76,232,135,.4);border-radius:9px;background:rgba(76,232,135,.06)}.attendance-record-subtitle{color:#9db0a4;font-size:11px}.attendance-record-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:9px}.attended-member{display:flex;align-items:center;justify-content:space-between;min-width:0;gap:10px;padding:7px 10px;border:1px solid rgba(76,232,135,.22);border-radius:7px;background:#111722}.attended-member span{overflow:hidden;color:#e4f8eb;font-size:13px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.attended-member b{flex:none;color:#4ce887;font-size:12px}.empty-attendance-record{grid-column:1/-1;padding:7px 0;color:#89978f;font-size:12px}.review-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;color:#c7d0dd;font-size:13px;font-weight:800;letter-spacing:.7px;text-transform:uppercase}.review-title b{border-radius:5px;padding:4px 7px;background:#202937;color:${LEGENDARY};font-size:12px}.table{overflow:hidden;border:1px solid #303744;border-radius:9px;background:#111722}.history-head,.history-row{display:grid;align-items:center;gap:4px;padding:7px 9px}.history-head{grid-template-columns:${gridColumns};min-height:50px;color:#a7b0c0;font-size:10px;font-weight:800;letter-spacing:.55px;text-transform:uppercase}.history-row{min-height:39px;border-top:1px solid #2a303b;background:rgba(8,12,18,.15)}.member-name{overflow:hidden;color:#f1f3f7;font-size:13px;font-weight:800;text-overflow:ellipsis;white-space:nowrap}.member-name.attention{color:${LEGENDARY}}.member-name.absence{color:#eb8a8e}.event-date{display:grid;justify-items:center;line-height:1.05;text-transform:none}.event-date b{color:#c7d0dd;font-size:11px}.event-date small{margin-top:3px;color:#687386;font-size:9px}.status{justify-self:center;width:31px;border-radius:5px;padding:4px 0;text-align:center;background:#202937;font-size:12px;font-weight:900}.status.signed{color:#4ce887}.status.late{color:#55aaff}.status.tentative{color:#f2c94c}.status.bench{color:#69ccf0}.status.absent{color:#eb6c70}.status.missing{color:${LEGENDARY};background:rgba(255,128,0,.12)}.status.untracked{color:#586273;background:transparent}.count{justify-self:center;font-size:13px;font-weight:800}.attended-count{color:#4ce887}.missing-count{color:${LEGENDARY}}.absent-count{color:#eb6c70}.empty-history{padding:18px;border-top:1px solid #2a303b;color:#4ce887;font-size:13px;font-weight:700}.legend{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:16px;color:#aeb8c8;font-size:11px}.legend span{display:flex;align-items:center;gap:6px}.legend b{display:inline-grid;min-width:20px;height:20px;place-items:center;border-radius:4px;background:#202937}.footer{margin-top:18px;padding-top:13px;border-top:1px solid #303744;color:#8994a6;font-size:11px}.footer strong{color:#d9dfe9}
+      </style></head><body><main class="card"><header class="brand"><img src="${logo}" alt="PizzaWarriors"><span>PizzaWarriors Officer Tools</span></header><div class="title">Pizza Core Attendance</div><div class="subtitle">Private officer report · Latest ${eventCount} completed raid${eventCount === 1 ? "" : "s"} · ${dateRange}</div><div class="stats"><div class="stat"><span class="label">Past raids</span><span class="value">${eventCount}</span><span class="sub">Recorded raids</span></div><div class="stat"><span class="label">No call/no show</span><span class="value">${history.missingSignups}</span><span class="sub">Missing</span></div><div class="stat"><span class="label">Absent</span><span class="value">${history.explicitAbsences}</span><span class="sub">Declared absence</span></div><div class="stat"><span class="label">Attendance</span><span class="value">${attendanceValue}</span><span class="sub">${attendedStatuses}/${trackedStatuses} attended</span></div></div><section class="attendance-record-section"><div class="section-title"><span>100% attendance</span><b>${leaders.length}</b></div><div class="attendance-record-subtitle">Signed or Tentative for all ${eventCount} raid${eventCount === 1 ? "" : "s"}</div><div class="attendance-record-grid">${leaderItems}</div></section><div class="review-title"><span>Members needing review</span><b>${attentionMembers.length}</b></div><div class="table"><div class="history-head"><span>Core member</span>${eventHeaders}<span>Attend</span><span>Miss</span><span>Abs</span></div>${rows}</div><div class="legend"><span><b class="status signed">✓</b>Signed up</span><span><b class="status tentative">T</b>Tentative</span><span><b class="status late">L</b>Late</span><span><b class="status bench">B</b>Bench</span><span><b class="status absent">A</b>Absent</span><span><b class="status missing">M</b>Missing</span><span><b class="status untracked">—</b>No historical record</span></div><div class="footer"><strong>PizzaWarriors Core Attendance</strong></div></main></body></html>`;
       return screenshotCard(browser, html, { width: cardWidth + 48, height: 1_600 });
     });
   }

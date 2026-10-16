@@ -31,7 +31,7 @@ export type ReadyReport = {
   members: ReadyMember[];
   unresolved: Array<{ signup: RaidSignup; reason: string }>;
 };
-export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; guildId?: string; signups: RaidSignup[] };
+export type RaidHelperEvent = { eventId: string; title: string; startsAt?: number; endsAt?: number; guildId?: string; signups: RaidSignup[] };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -183,18 +183,36 @@ export function selectCurrentPizzaCoreEvent(events: readonly RaidHelperEvent[], 
   return datedCoreEvents.find((event) => isCurrentPizzaCoreEvent(event, now));
 }
 
+export class RaidHelperEventError extends Error {
+  constructor(readonly status: number) {
+    super(`Raid-Helper returned ${status} for that event.`);
+    this.name = "RaidHelperEventError";
+  }
+}
+
 export async function getRaidHelperEvent(value: string): Promise<RaidHelperEvent> {
   const eventId = eventIdFromInput(value);
   if (!eventId) throw new Error("Provide a Raid-Helper forum post link or its copied Discord event ID.");
   const response = await fetch(`${RAID_HELPER_API}/${eventId}`, { headers: { accept: "application/json", "user-agent": "PizzaWarriorsArmoryBot/1.0" }, signal: AbortSignal.timeout(15_000) });
-  if (!response.ok) throw new Error(`Raid-Helper returned ${response.status} for that event.`);
+  if (!response.ok) throw new RaidHelperEventError(response.status);
   const payload: unknown = await response.json();
   if (!isRecord(payload)) throw new Error("Raid-Helper returned an unexpected event response.");
   const title = firstText(payload, ["title", "name", "event_name", "eventName"]) ?? "Raid readiness";
   const startsAt = firstTimestamp(payload, ["startTime", "start_time", "startsAt", "starts_at"]);
+  const suppliedEnd = firstTimestamp(payload, ["endTime", "end_time", "endsAt", "ends_at"]);
+  const rawAdvancedSettings = payload.advancedSettings;
+  const rawDuration = isRecord(rawAdvancedSettings) ? rawAdvancedSettings.duration : undefined;
+  const durationMinutes = typeof rawDuration === "number" ? rawDuration : typeof rawDuration === "string" ? Number(rawDuration) : Number.NaN;
+  const endsAt = startsAt === undefined
+    ? undefined
+    : suppliedEnd !== undefined && suppliedEnd > startsAt
+      ? suppliedEnd
+      : Number.isFinite(durationMinutes) && durationMinutes > 0
+        ? startsAt + durationMinutes * 60_000
+        : undefined;
   const rawGuildId = firstText(payload, ["serverId", "server_id", "guildId", "guild_id"]);
   const guildId = rawGuildId && /^\d{16,22}$/.test(rawGuildId) ? rawGuildId : undefined;
-  return { eventId, title, ...(startsAt ? { startsAt } : {}), ...(guildId ? { guildId } : {}), signups: parseRaidHelperSignups(payload) };
+  return { eventId, title, ...(startsAt ? { startsAt } : {}), ...(endsAt ? { endsAt } : {}), ...(guildId ? { guildId } : {}), signups: parseRaidHelperSignups(payload) };
 }
 
 async function concurrentMap<T, R>(items: readonly T[], limit: number, worker: (item: T) => Promise<R>): Promise<R[]> {

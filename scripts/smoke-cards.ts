@@ -8,6 +8,7 @@ import { chromium } from "playwright";
 import { ArmoryCardRenderer } from "../src/card.js";
 import { auditCoreRoster, type CoreRosterSnapshot } from "../src/core-roster.js";
 import { buildCoreAttendanceHistory, type CoreAttendanceEvent } from "../src/core-attendance.js";
+import type { RaidAttendanceSummary } from "../src/raid-attendance.js";
 import { auditGearPreparation } from "../src/gear-audit.js";
 import { calculateGearScore, type GearItem, type GearScoreEquipLoc } from "../src/gearscore.js";
 import type { GuildRoster } from "../src/guild.js";
@@ -56,6 +57,7 @@ const signups: RaidSignup[] = [
   signup(6, "Tentative Raider", "Tentative"),
   signup(7, "Absent Raider", "Absent"),
   signup(8, "Benched Raider", "Bench"),
+  signup(9, "Late Raider", "Late"),
 ];
 const coreRoster: CoreRosterSnapshot = {
   sourceChannelId: "123456789012346000", sourceMessageId: "123456789012346001",
@@ -63,7 +65,7 @@ const coreRoster: CoreRosterSnapshot = {
   updatedAt: fixtureNow,
   members: [
     ...signups.filter((member) => member.displayName !== "Guest Mage").map(({ discordUserId, displayName }) => ({ discordUserId, displayName })),
-    { discordUserId: "123456789012345009", displayName: "Missing Raider" },
+    { discordUserId: "123456789012345010", displayName: "Missing Raider" },
   ],
 };
 const coreAudit = auditCoreRoster(coreRoster, signups);
@@ -88,7 +90,26 @@ const events: CoreAttendanceEvent[] = Array.from({ length: 4 }, (_, week) => ({
     status: index === 0 && week === 0 ? "Missing" : entry.status,
   })),
 }));
-const history = buildCoreAttendanceHistory(coreRoster, events);
+const futureEvent: CoreAttendanceEvent = {
+  ...events.at(-1)!,
+  eventId: "123456789012349099",
+  title: "FUTURE SHOULD NOT RENDER",
+  startsAt: fixtureNow + 7 * 24 * 60 * 60_000,
+};
+const history = buildCoreAttendanceHistory(coreRoster, [...events, futureEvent]);
+const completedEvents = events.map((event, eventIndex) => ({
+  ...event,
+  entries: event.entries.map((entry) => entry.discordUserId === signups[0]!.discordUserId && eventIndex > 0
+    ? { ...entry, status: "Signed" as const }
+    : entry),
+}));
+const attendance: RaidAttendanceSummary = {
+  history: buildCoreAttendanceHistory(coreRoster, completedEvents),
+  requestedRaids: completedEvents.length,
+  unavailableRaids: 0,
+  unavailableEventIds: [],
+  refreshedAt: fixtureNow,
+};
 const profile: UpgradeProfile = {
   id: "visual-smoke", className: "Paladin", specName: "Protection", status: "research", content: "ICC / Ruby Sanctum",
   reviewNote: "Synthetic local visual fixture only.",
@@ -146,9 +167,29 @@ chromium.launch = async (options) => {
         const inspection = await page.evaluate((literal) => ({
           injectedElements: document.querySelectorAll("[data-smoke-injected]").length,
           containsLiteralName: document.querySelector(".card")?.textContent?.includes(literal),
+          isAttendance: document.querySelector(".title")?.textContent === "Pizza Core Attendance",
+          attendanceText: document.querySelector(".card")?.textContent ?? "",
+          savedOnlyElements: document.querySelectorAll(".saved-only").length,
+          warningElements: document.querySelectorAll(".attendance-unavailable").length,
+          sourceNotes: document.querySelectorAll(".source-note").length,
+          leaderNames: [...document.querySelectorAll(".attended-member span")].map((node) => node.textContent),
+          legendLabels: [...document.querySelectorAll(".legend span")].map((node) => node.textContent?.replace(/^[✓TLBAM—]/, "").trim()),
         }), injectionText);
         assert.equal(inspection.injectedElements, 0);
         assert.equal(inspection.containsLiteralName, true);
+        if (inspection.isAttendance) {
+          assert.equal(inspection.attendanceText.includes("100% attendance"), true);
+          assert.equal(inspection.attendanceText.includes("*"), false);
+          assert.equal(inspection.attendanceText.includes("FUTURE SHOULD NOT RENDER"), false);
+          assert.equal(inspection.savedOnlyElements, 0);
+          assert.equal(inspection.warningElements, 0);
+          assert.equal(inspection.sourceNotes, 0);
+          assert.deepEqual(inspection.legendLabels, ["Signed up", "Tentative", "Late", "Bench", "Absent", "Missing", "No historical record"]);
+          assert.ok(inspection.leaderNames.includes("Tentative Raider"), "Tentative must count as attended");
+          assert.equal(inspection.leaderNames.includes("Late Raider"), false);
+          assert.equal(inspection.leaderNames.includes("Benched Raider"), false);
+          assert.equal(inspection.leaderNames.includes(injectionText), false, "Missing must block recognition");
+        }
         htmlChecks++;
       };
       return page;
@@ -166,7 +207,7 @@ try {
     ["armory", () => renderer.render({ name: injectionText, realm: "Lordaeron", className: "Paladin", primarySpec: "Protection", items, summary })],
     ["upgrade", () => renderer.renderUpgrade({ name: injectionText, realm: "Lordaeron", className: "Paladin", specName: "Protection", profile, items })],
     ["ready", () => renderer.renderReady({ report, realm: "Lordaeron", coreRoster: coreAudit })],
-    ["attendance", () => renderer.renderAttendance({ history })],
+    ["attendance", () => renderer.renderAttendance({ history, attendance })],
     ["roster", () => renderer.renderRoster({ roster, page: 0, pageSize: 10 })],
   ];
   for (const [card, render] of renders) {
