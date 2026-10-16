@@ -11,6 +11,7 @@ All notable changes to PizzaWarriors Armory Bot are documented here.
 
 ### Fixed
 
+- Full voice channels now receive an immediate private explanation instead of a generic connection timeout; existing sessions and bots allowed to bypass the channel limit keep working.
 - Added one-minute recovery triggers to the existing single-instance Windows bot task, so an exited process is retried beyond the finite failure-retry window. Documented disabling the task during maintenance.
 
 ### Added
