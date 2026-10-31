@@ -9,7 +9,7 @@ import { SkillError, resolveLocalDateTime } from "./raid-helper-event.mjs";
 
 const RH = "https://raid-helper.xyz/api/v4";
 const DISCORD = "https://discord.com/api/v10";
-const ADAPTER_VERSION = "pizza-core-rollover/10";
+const ADAPTER_VERSION = "pizza-core-rollover/11";
 const DEFAULT_CONFIG = resolve(dirname(fileURLToPath(import.meta.url)), "..", "config.pizza-core.local.json");
 const ID = /^\d{16,22}$/;
 const ENV = /^[A-Z_][A-Z0-9_]*$/;
@@ -67,6 +67,7 @@ export function validateConfig(raw) {
       leaderId: snowflake(raw.event?.leaderId, "event.leaderId"),
       leaderDisplayName: string(raw.event?.leaderDisplayName, "event.leaderDisplayName"),
       description: typeof raw.event?.description === "string" ? raw.event.description : "",
+      agenda: raw.event?.agenda === undefined ? "" : typeof raw.event.agenda === "string" ? raw.event.agenda : fail("INVALID_CONFIG", "event.agenda must be a string."),
       timeZone: string(raw.event?.timeZone, "event.timeZone"),
       weekday: raw.event?.weekday,
       time: string(raw.event?.time, "event.time"),
@@ -235,6 +236,7 @@ async function readAudienceAudit(config, at, injectedProof) {
 function calendarPayload(config, target, postReference) {
   const description = [
     `Raid leader: ${config.event.leaderDisplayName}\nRaid signup / live roster: ${forumPostUrl(config, postReference)}`,
+    ...(config.event.agenda ? [config.event.agenda] : []),
     CALENDAR_NOTICE,
     target.date === config.bootstrap.date && config.bootstrap.legacyPolicy === true
       ? "Roster: 2 tanks, 8 melee, 10 ranged, 5 healers. Use the linked Raid-Helper post for this raid's signups and availability."
@@ -499,7 +501,7 @@ async function candidates(config, target, apiKey, token, fetchImpl) {
       // renamed, foreign-owned, or unrecorded post remains a conflict.
       const retiredCanary = id === config.activation.rolePolicyCanaryEventId
         && id === config.activation.lifecycleCanaryThreadId
-        && row.title === `TEST ONLY - ${config.event.title}`
+        && row.title === (config.activation.canaryTitle ?? `TEST ONLY - ${config.event.title}`)
         && thread.owner_id === config.raidHelperBotUserId
         && thread.name === row.title
         && thread.thread_metadata?.archived === true
