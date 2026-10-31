@@ -574,6 +574,43 @@ test("duplicate exact-time successors cause zero mutations", async () => {
   });
 });
 
+test("renamed combined raid retains the exact closed historical canary without duplicating the successor", async () => {
+  await isolated(async (config) => {
+    config.event.title = "Pizza Core — RS25 Normal → ICC25";
+    config.activation.canaryTitle = "TEST ONLY - Pizza Core ICC25";
+    config.activation.configHash = configHash(config);
+    const api = mock(config, { duplicate: true });
+    api.events.get(ids.duplicate).title = config.activation.canaryTitle;
+    api.threads.get(ids.duplicate).name = config.activation.canaryTitle;
+    api.threads.get(ids.duplicate).thread_metadata = { archived: true, locked: true };
+    const result = await applyRollover(config, AT, api);
+    assert.equal(result.verification.journal, "complete");
+    assert.equal(rhPosts(api).length, 0);
+    assert.equal(nativePosts(api).length, 1);
+  });
+});
+
+test("a renamed or open historical canary remains an exact-time conflict", async () => {
+  for (const change of [
+    (api) => { api.events.get(ids.duplicate).title = "Officer renamed canary"; api.threads.get(ids.duplicate).name = "Officer renamed canary"; },
+    (api) => { api.threads.get(ids.duplicate).thread_metadata.archived = false; },
+    (api) => { api.threads.get(ids.duplicate).thread_metadata.locked = false; },
+  ]) {
+    await isolated(async (config) => {
+      config.event.title = "Pizza Core — RS25 Normal → ICC25";
+      config.activation.canaryTitle = "TEST ONLY - Pizza Core ICC25";
+      config.activation.configHash = configHash(config);
+      const api = mock(config, { duplicate: true });
+      api.events.get(ids.duplicate).title = config.activation.canaryTitle;
+      api.threads.get(ids.duplicate).name = config.activation.canaryTitle;
+      api.threads.get(ids.duplicate).thread_metadata = { archived: true, locked: true };
+      change(api);
+      await assert.rejects(() => applyRollover(config, AT, api), { code: "DUPLICATE_OCCURRENCE" });
+      assert.equal(api.writes.length, 0);
+    });
+  }
+});
+
 test("a duplicate appearing during successful creation prevents predecessor closure", async () => {
   await isolated(async (config) => {
     const api = mock(config, { concurrentDuplicate: true });
@@ -909,6 +946,28 @@ test("native voice payload uses the same occurrence, leader, signup link, and no
   }
   buildNativePayload(config, "2026-09-11", ids.duplicate);
   assert.equal(configHash(config), originalHash, "Dynamic post IDs must not invalidate activation");
+});
+
+test("combined agenda appears once in the native event and shares the one signup roster", () => {
+  const config = fixture();
+  config.event.title = "Pizza Core — RS25 Normal → ICC25";
+  config.event.agenda = "Raid plan: Ruby Sanctum 25-player Normal first, followed by Icecrown Citadel 25-player. One combined raid night with one signup roster.";
+  config.event.description = `Pizza Core: please sign up for this Friday's raid.\n\n${config.event.agenda}\n\nPizza Core members sign up normally; other guild members may use bench.`;
+  const plan = buildPlan(config, "2026-10-31T06:00:00Z");
+  const signup = buildPayload(config, plan.next.date);
+  const native = buildNativePayload(config, plan.next.date, ids.next);
+  const rosterUrl = `https://discord.com/channels/${ids.guild}/${ids.next}`;
+  assert.equal(plan.next.date, "2026-11-06");
+  assert.equal(signup.title, config.event.title);
+  assert.equal(signup.description, config.event.description);
+  assert.equal(native.name, config.event.title);
+  assert.equal(native.scheduled_start_time, plan.next.start.utc);
+  assert.equal(native.scheduled_end_time, plan.next.end.utc);
+  assert.equal(native.description.split(config.event.agenda).length - 1, 1);
+  assert.equal(native.description.split(rosterUrl).length - 1, 1);
+  assert.ok(native.description.includes("does not sign you up"));
+  assert.ok(native.description.includes("Managed occurrence:"));
+  assert.ok(native.description.length <= 1000);
 });
 
 test("invalid native description/name and missing voice policy fail before mutation", () => {

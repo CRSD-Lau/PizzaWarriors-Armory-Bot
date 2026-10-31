@@ -16,7 +16,7 @@ This module is an optional deterministic scheduler companion to the Armory servi
 | Saturday 03:00 Halifax | End the old native event if active; create/adopt and verify next Friday's signup/calendar pair; then lock and archive the old forum post. Recovery window is 12 hours. |
 | Windows startup + two minutes | Check the current occurrence only; no bulk backfill outside its recovery window. |
 
-The weekly post is **Pizza Core ICC25**, with that occurrence's date/time on the card and `PizzaCore` plus `Event` tags. The configured leader appears on the event; invoking the tool does not replace the leader. Composition is 2 tanks, 8 melee, 10 ranged, and 5 healers. The overall 25-player limit is visual, not a hard signup lock. Core members choose their class/spec each week; other members go to bench. Each new post requests signups with one Core-role ping. Discussion stays in the post until it is locked/archived, not deleted.
+The weekly post is **Pizza Core — RS25 Normal → ICC25**, with that occurrence's date/time on the card and `PizzaCore` plus `Event` tags. Ruby Sanctum 25-player Normal comes first, followed by Icecrown Citadel 25-player. This is one combined raid night with one signup roster and one matching native calendar event. Keep the stable `pizza-core-icc25` series ID; it identifies the existing journal rather than the display name. The configured leader appears on the event; invoking the tool does not replace the leader. Composition is 2 tanks, 8 melee, 10 ranged, and 5 healers. The overall 25-player limit is visual, not a hard signup lock. Core members choose their class/spec each week; other members go to bench. Each new post requests signups with one Core-role ping. Discussion stays in the post until it is locked/archived, not deleted.
 
 The matching native event uses **Raid Chat (Open Mic)** and links directly to the current signup post. Clicking Interested does not sign up for the raid. Discord may auto-complete a voice event when the room empties; never restart a terminal event or park a bot in voice to prevent that.
 
@@ -86,7 +86,9 @@ Read `<statePath>.scheduler-status.json`, `<statePath>.scheduler.log`, task hist
 - Legacy bootstrap: only the explicitly pinned existing pair gets the legacy-policy exception; identity, composition, tags, native ownership/payload, and open forum checks still apply. New occurrences do not inherit that exception.
 - Completed/canceled native events remain terminal. Missed starts do not fabricate attendance. No startup backfill beyond the current eligible window.
 
-When accepting a material contract revision, separately record explicit approval, old/new config hashes, and actual verification. Reconcile only reviewed matching journal entries, preserving IDs, payload hashes, and historical timestamps. Never replace the canonical journal with an example or a second operational copy.
+When accepting a material contract revision, separately record explicit approval, old/new config hashes, and actual verification. Reconcile only reviewed matching journal entries, preserving IDs and historical timestamps. An explicitly authorized title/description edit requires updating the current pair's native payload hash after readback; preserve the old hash in its private change receipt. Never replace the canonical journal with an example or a second operational copy.
+
+For the combined RS/ICC wording, adapter v11 adds optional `event.agenda` to the native description. Keep the same plan in `event.description` for Raid-Helper. A renamed series must pin `activation.canaryTitle` to the actual historical test title, so a display-name change never relabels or weakens the old canary evidence. Keep its ID, ownership, locked/archived checks, and historical timestamps intact. Edit existing event names/descriptions in place; do not replace a signup post, create a separate RS event, or send an extra creation ping.
 
 ## Validation and source security
 

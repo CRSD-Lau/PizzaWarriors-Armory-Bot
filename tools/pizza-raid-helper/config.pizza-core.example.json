@@ -23,11 +23,12 @@
     }
   ],
   "event": {
-    "title": "Pizza Core ICC25",
+    "title": "Pizza Core — RS25 Normal → ICC25",
     "templateId": "wowwotlk",
     "leaderId": "100000000000000008",
     "leaderDisplayName": "Configured raid leader",
-    "description": "Pizza Core: please sign up for this Friday's raid using the class/spec controls below.\n\nPizza Core members sign up normally; other guild members are welcome to sign up on bench. Discussion stays open to everyone who can access this forum until the raid ends.\n\nVoice: <#100000000000000009>",
+    "description": "Pizza Core: please sign up for this Friday's raid using the class/spec controls below.\n\nRaid plan: Ruby Sanctum 25-player Normal first, followed by Icecrown Citadel 25-player. One combined raid night with one signup roster.\n\nPizza Core members sign up normally; other guild members are welcome to sign up on bench. Discussion stays open to everyone who can access this forum until the raid ends.\n\nVoice: <#100000000000000009>",
+    "agenda": "Raid plan: Ruby Sanctum 25-player Normal first, followed by Icecrown Citadel 25-player. One combined raid night with one signup roster.",
     "timeZone": "America/New_York",
     "weekday": 5,
     "time": "22:00",
@@ -85,6 +86,7 @@
   },
   "activation": {
     "configHash": null,
+    "canaryTitle": null,
     "rolePolicyCanaryEventId": null,
     "lifecycleCanaryThreadId": null,
     "nativeCalendarCanaryEventId": null,
