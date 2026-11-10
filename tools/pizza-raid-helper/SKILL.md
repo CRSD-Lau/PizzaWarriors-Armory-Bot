@@ -14,6 +14,7 @@ Default to an offline `plan`. Read [operations and recovery](references/operatio
 
 ## Required behavior
 
+- One combined event: **Pizza Core — RS25 Normal → ICC25**. Ruby Sanctum 25-player Normal comes first, followed by Icecrown Citadel 25-player, using one signup roster and one calendar event. Keep the stable series ID when changing the display title. `event.agenda` supplies the native calendar's raid-plan paragraph; include the same plan in the Raid-Helper description.
 - Friday 22:00 `America/New_York`, 240 minutes. Compute local calendar dates rather than adding 168 elapsed hours. Native voice destination: the configured **Raid Chat (Open Mic)**.
 - Raid-Helper creates each forum signup. The Armory bot creates/manages the native voice event and locks/archives the finished post. Do not provision channels during rollover or create a substitute post directly through Discord.
 - Composition: 2 tanks, 8 melee, 10 ranged, 5 healers. Pizza Core members sign up normally; others are benched. This does not enroll the role automatically or copy the prior roster.
