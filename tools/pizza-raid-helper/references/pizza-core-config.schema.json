@@ -37,6 +37,7 @@
         "leaderId": { "$ref": "#/$defs/id" },
         "leaderDisplayName": { "type": "string", "minLength": 1 },
         "description": { "type": "string" },
+        "agenda": { "type": "string" },
         "timeZone": { "const": "America/New_York" },
         "weekday": { "const": 5 },
         "time": { "const": "22:00" },
@@ -98,6 +99,7 @@
       "required": ["configHash", "rolePolicyCanaryEventId", "lifecycleCanaryThreadId", "nativeCalendarCanaryEventId", "coreSignupVerified", "nonCoreBenchVerified", "lifecycleVerified", "nativeCalendarVerified", "nativeCalendarRetryVerified", "nativeCalendarLifecycleVerified", "verifiedAt"],
       "properties": {
         "configHash": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "canaryTitle": { "type": ["string", "null"] },
         "rolePolicyCanaryEventId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
         "lifecycleCanaryThreadId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
         "nativeCalendarCanaryEventId": { "anyOf": [{ "$ref": "#/$defs/id" }, { "type": "null" }] },
